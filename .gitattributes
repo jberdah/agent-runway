@@ -1,0 +1,4 @@
+# Executable scripts must keep LF endings: a CRLF shebang breaks the binary
+# on Linux and macOS.
+* text=auto eol=lf
+*.mjs text eol=lf
