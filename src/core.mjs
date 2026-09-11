@@ -1,0 +1,237 @@
+// Core logic shared by the CLI, the Claude Code skill and the MCP server.
+//
+// Security invariant: this module never logs, prints or returns a token.
+// Callers receive usage data only. Keep it that way.
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+export const VERSION = "0.1.0";
+
+const USER_AGENT = `claude-usage/${VERSION} (+https://github.com/anthropics/claude-usage)`;
+
+/** Errors this module throws, with a stable `code` so callers can branch. */
+export class UsageError extends Error {
+  constructor(code, message, hint) {
+    super(message);
+    this.name = "UsageError";
+    this.code = code; // NO_TOKEN | AUTH | RATE_LIMITED | NO_RESPONSE | NETWORK
+    this.hint = hint;
+  }
+}
+
+const claudeDir = () => path.join(os.homedir(), ".claude");
+
+function readCredentialsFile() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(claudeDir(), ".credentials.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function readTokenFile(file) {
+  try {
+    const value = fs.readFileSync(file, "utf8").trim();
+    return value.startsWith("sk-ant-") ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve an OAuth token, most explicit source first.
+ *
+ * The last source is the token Claude Code keeps for its own session. It is a
+ * convenience so the tool works with no setup, but it is not a stable contract:
+ * on macOS the live token lives in the Keychain and on Windows in the Credential
+ * Manager, so the file is frequently absent or stale. Set
+ * CLAUDE_USAGE_NO_LOCAL_CREDENTIALS=1 to skip it entirely.
+ *
+ * @returns {{token: string, source: string, expiredAt: string|null}|null}
+ */
+export function resolveToken(env = process.env) {
+  const fromEnv = [
+    ["CLAUDE_CODE_OAUTH_TOKEN", "env CLAUDE_CODE_OAUTH_TOKEN"],
+    ["CLAUDE_USAGE_TOKEN", "env CLAUDE_USAGE_TOKEN"],
+    ["ANTHROPIC_AUTH_TOKEN", "env ANTHROPIC_AUTH_TOKEN"],
+  ];
+  for (const [name, source] of fromEnv) {
+    if (env[name]) return { token: env[name], source, expiredAt: null };
+  }
+
+  const fileToken = readTokenFile(path.join(claudeDir(), "usage-token"));
+  if (fileToken) return { token: fileToken, source: "~/.claude/usage-token", expiredAt: null };
+
+  if (env.CLAUDE_USAGE_NO_LOCAL_CREDENTIALS === "1") return null;
+
+  const oauth = readCredentialsFile()?.claudeAiOauth;
+  if (oauth?.accessToken) {
+    const expired = oauth.expiresAt && oauth.expiresAt < Date.now();
+    return {
+      token: oauth.accessToken,
+      source: "~/.claude/.credentials.json",
+      expiredAt: expired ? new Date(oauth.expiresAt).toISOString() : null,
+    };
+  }
+  return null;
+}
+
+/** Organization UUID, needed only by the claude.ai endpoint. */
+export function resolveOrgId(env = process.env) {
+  return env.CLAUDE_ORG_ID || readCredentialsFile()?.organizationUuid || null;
+}
+
+async function request(url, token, fetchImpl) {
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": USER_AGENT,
+      },
+    });
+  } catch (cause) {
+    throw new UsageError("NETWORK", `Could not reach ${new URL(url).host}: ${cause.message}`);
+  }
+  const text = await response.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = text;
+  }
+  return { status: response.status, ok: response.ok, body };
+}
+
+const WINDOW_LABELS = {
+  session: "Session (5h)",
+  weekly_all: "Weekly - all models",
+  weekly_scoped: "Weekly",
+};
+
+/**
+ * Flatten the API payload into a shape the three surfaces can share.
+ *
+ * The endpoints are internal and undocumented, so the canonical `limits` array
+ * is used when present and a tolerant scan of the top-level window objects is
+ * the fallback. Neither path is allowed to throw on an unexpected shape.
+ */
+export function normalize(payload) {
+  const windows = [];
+
+  if (Array.isArray(payload?.limits) && payload.limits.length) {
+    for (const limit of payload.limits) {
+      const model = limit.scope?.model?.display_name ?? null;
+      const base = WINDOW_LABELS[limit.kind] ?? limit.kind;
+      windows.push({
+        id: limit.kind,
+        label: model ? `${base} - ${model}` : base,
+        percent: limit.percent,
+        severity: limit.severity ?? "normal",
+        resetsAt: limit.resets_at ?? null,
+        active: Boolean(limit.is_active),
+        model,
+      });
+    }
+  } else if (payload && typeof payload === "object") {
+    for (const [key, value] of Object.entries(payload)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      if (typeof value.utilization !== "number") continue;
+      const percent = value.utilization > 0 && value.utilization <= 1
+        ? value.utilization * 100
+        : value.utilization;
+      windows.push({
+        id: key,
+        label: WINDOW_LABELS[key] ?? key,
+        percent: Math.round(percent),
+        severity: "normal",
+        resetsAt: value.resets_at ?? null,
+        active: false,
+        model: null,
+      });
+    }
+  }
+
+  const order = { session: 0, weekly_all: 1, weekly_scoped: 2 };
+  windows.sort((a, b) => (order[a.id] ?? 9) - (order[b.id] ?? 9) || b.percent - a.percent);
+
+  const extra = payload?.extra_usage;
+  const extraUsage = extra && typeof extra === "object"
+    ? {
+        enabled: Boolean(extra.is_enabled),
+        percent: typeof extra.utilization === "number"
+          ? Math.round(extra.utilization > 1 ? extra.utilization : extra.utilization * 100)
+          : null,
+        monthlyLimit: extra.monthly_limit ?? null,
+        currency: extra.currency ?? null,
+        spendLimitReached: Boolean(extra.spend_limit_reached),
+      }
+    : null;
+
+  return { windows, extraUsage };
+}
+
+/**
+ * Fetch usage for the current account.
+ *
+ * @returns {Promise<{windows: Array, extraUsage: object|null, endpoint: string, tokenSource: string, raw: object}>}
+ */
+export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
+  const resolved = resolveToken(env);
+  if (!resolved) {
+    throw new UsageError(
+      "NO_TOKEN",
+      "No Claude OAuth token found.",
+      "Run `claude setup-token` and export the result as CLAUDE_CODE_OAUTH_TOKEN."
+    );
+  }
+
+  const orgId = resolveOrgId(env);
+  const endpoints = [{ name: "oauth/usage", url: "https://api.anthropic.com/api/oauth/usage" }];
+  if (orgId) {
+    endpoints.push({
+      name: "organizations/usage",
+      url: `https://claude.ai/api/organizations/${orgId}/usage`,
+    });
+  }
+
+  const failures = [];
+  for (const endpoint of endpoints) {
+    const result = await request(endpoint.url, resolved.token, fetchImpl);
+
+    if (result.ok) {
+      return {
+        ...normalize(result.body),
+        endpoint: endpoint.name,
+        tokenSource: resolved.source,
+        raw: result.body,
+      };
+    }
+
+    failures.push(`${endpoint.name}: HTTP ${result.status}`);
+
+    if (result.status === 429) {
+      throw new UsageError(
+        "RATE_LIMITED",
+        "The usage endpoint itself is rate limiting these requests. This is not your account quota.",
+        "Wait a few minutes before retrying. Do not poll in a loop."
+      );
+    }
+  }
+
+  const authFailed = failures.some((f) => f.includes("401") || f.includes("403"));
+  if (authFailed) {
+    const stale = resolved.expiredAt ? ` The token expired at ${resolved.expiredAt}.` : "";
+    throw new UsageError(
+      "AUTH",
+      `Token rejected (source: ${resolved.source}).${stale}`,
+      "Generate a fresh one yourself with `claude setup-token`, then export it as CLAUDE_CODE_OAUTH_TOKEN."
+    );
+  }
+
+  throw new UsageError("NO_RESPONSE", `No usage endpoint responded (${failures.join(", ")}).`);
+}

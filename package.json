@@ -1,0 +1,50 @@
+{
+  "name": "claude-usage",
+  "version": "0.1.0",
+  "description": "Read your Claude subscription rate-limit windows from the terminal, from Claude Code, or as an MCP tool.",
+  "type": "module",
+  "license": "MIT",
+  "author": "jberdah (https://github.com/jberdah)",
+  "homepage": "https://github.com/jberdah/claude-usage#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jberdah/claude-usage.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jberdah/claude-usage/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "claude-usage": "src/cli.mjs",
+    "claude-usage-mcp": "src/mcp.mjs"
+  },
+  "exports": {
+    ".": "./src/core.mjs"
+  },
+  "files": [
+    "src",
+    "skills",
+    ".claude-plugin",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "start": "node src/cli.mjs",
+    "mcp": "node src/mcp.mjs",
+    "smoke": "node scripts/smoke-mcp.mjs"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "usage",
+    "rate-limit",
+    "quota"
+  ],
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  }
+}

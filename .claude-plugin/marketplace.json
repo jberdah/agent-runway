@@ -1,0 +1,31 @@
+{
+  "name": "claude-usage",
+  "description": "Single-plugin marketplace for claude-usage.",
+  "owner": {
+    "name": "jberdah",
+    "url": "https://github.com/jberdah"
+  },
+  "plugins": [
+    {
+      "name": "claude-usage",
+      "displayName": "Claude Usage",
+      "source": "./",
+      "description": "Check how much of your Claude subscription quota is left: the 5-hour session window, the weekly windows, and when each resets.",
+      "version": "0.1.0",
+      "author": {
+        "name": "jberdah",
+        "url": "https://github.com/jberdah"
+      },
+      "homepage": "https://github.com/jberdah/claude-usage#readme",
+      "repository": "https://github.com/jberdah/claude-usage",
+      "license": "MIT",
+      "category": "productivity",
+      "keywords": [
+        "usage",
+        "quota",
+        "rate-limit",
+        "mcp"
+      ]
+    }
+  ]
+}
