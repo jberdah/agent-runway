@@ -42,12 +42,15 @@ export function ttlMs(env = process.env) {
 /**
  * @returns {{value: any, ageMs: number, fresh: boolean}|null}
  */
-export function read(key, maxAgeMs = DEFAULT_TTL_MS) {
+export function read(key, maxAgeMs = DEFAULT_TTL_MS, maxStaleMs = STALE_MAX_MS) {
   try {
     const { at, value } = JSON.parse(fs.readFileSync(fileFor(key), "utf8"));
     const ageMs = Date.now() - at;
     if (!Number.isFinite(ageMs) || ageMs < 0) return null;
-    if (ageMs > STALE_MAX_MS) return null; // too old to be worth anything
+    // Quota readings expire with time. Anything derived from a binary does not:
+    // it changes when the file changes, which the key already encodes, so those
+    // callers pass Infinity rather than a duration.
+    if (ageMs > maxStaleMs) return null;
     return { value, ageMs, fresh: maxAgeMs > 0 && ageMs <= maxAgeMs };
   } catch {
     return null; // absent or unreadable is simply a miss
