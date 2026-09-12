@@ -1,23 +1,23 @@
 {
-  "name": "claude-usage",
-  "description": "Single-plugin marketplace for claude-usage.",
+  "name": "agent-runway",
+  "description": "Single-plugin marketplace for agent-runway.",
   "owner": {
     "name": "jberdah",
     "url": "https://github.com/jberdah"
   },
   "plugins": [
     {
-      "name": "claude-usage",
-      "displayName": "Claude Usage",
+      "name": "agent-runway",
+      "displayName": "Agent Runway",
       "source": "./",
-      "description": "Check how much of your Claude subscription quota is left: the 5-hour session window, the weekly windows, and when each resets.",
+      "description": "How much runway is left before you hit a rate limit: which windows are consumed and when each resets. Claude today, Codex and Copilot next.",
       "version": "0.1.0",
       "author": {
         "name": "jberdah",
         "url": "https://github.com/jberdah"
       },
-      "homepage": "https://github.com/jberdah/claude-usage#readme",
-      "repository": "https://github.com/jberdah/claude-usage",
+      "homepage": "https://github.com/jberdah/agent-runway#readme",
+      "repository": "https://github.com/jberdah/agent-runway",
       "license": "MIT",
       "category": "productivity",
       "keywords": [

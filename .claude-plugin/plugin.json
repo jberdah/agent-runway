@@ -1,14 +1,14 @@
 {
-  "name": "claude-usage",
-  "displayName": "Claude Usage",
+  "name": "agent-runway",
+  "displayName": "Agent Runway",
   "version": "0.1.0",
-  "description": "Check how much of your Claude subscription quota is left: the 5-hour session window, the weekly windows, and when each resets.",
+  "description": "How much runway is left before you hit a rate limit: which windows are consumed and when each resets. Claude today, Codex and Copilot next.",
   "author": {
     "name": "jberdah",
     "url": "https://github.com/jberdah"
   },
-  "homepage": "https://github.com/jberdah/claude-usage#readme",
-  "repository": "https://github.com/jberdah/claude-usage",
+  "homepage": "https://github.com/jberdah/agent-runway#readme",
+  "repository": "https://github.com/jberdah/agent-runway",
   "license": "MIT",
   "keywords": [
     "usage",
@@ -17,7 +17,7 @@
     "mcp"
   ],
   "mcpServers": {
-    "claude-usage": {
+    "agent-runway": {
       "command": "node",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/src/mcp.mjs"

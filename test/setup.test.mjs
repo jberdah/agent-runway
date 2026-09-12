@@ -48,8 +48,8 @@ test("envExportLine references the token file, never a literal secret", () => {
 });
 
 test("envExportLine is tagged so a rerun can detect it", () => {
-  assert.ok(envExportLine("/home/u/.zshrc").includes("# claude-usage"));
-  assert.ok(envExportLine("/home/u/.config/fish/config.fish").includes("# claude-usage"));
+  assert.ok(envExportLine("/home/u/.zshrc").includes("# agent-runway"));
+  assert.ok(envExportLine("/home/u/.config/fish/config.fish").includes("# agent-runway"));
 });
 
 test("tokenLooksValid accepts real shapes and rejects junk", () => {
@@ -66,7 +66,7 @@ test("tokenLooksValid accepts real shapes and rejects junk", () => {
 });
 
 test("persistToken writes the token file, restricted on POSIX", () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "claude-usage-test-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runway-test-"));
   try {
     const token = "sk-ant-oat01-" + "C".repeat(40);
     const file = persistToken(token, home);
@@ -84,7 +84,7 @@ test("persistToken writes the token file, restricted on POSIX", () => {
 });
 
 test("persistToken creates the .claude directory when missing", () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "claude-usage-test-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runway-test-"));
   try {
     assert.ok(!fs.existsSync(path.join(home, ".claude")));
     persistToken("sk-ant-oat01-" + "D".repeat(40), home);

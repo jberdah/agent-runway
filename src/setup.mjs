@@ -63,9 +63,9 @@ export function shellProfilePath(env = process.env, home = os.homedir(), platfor
  */
 export function envExportLine(profilePath, file = "$HOME/.claude/usage-token") {
   if (profilePath && profilePath.endsWith("config.fish")) {
-    return `set -gx CLAUDE_USAGE_TOKEN (cat ${file} 2>/dev/null); # claude-usage`;
+    return `set -gx CLAUDE_USAGE_TOKEN (cat ${file} 2>/dev/null); # agent-runway`;
   }
-  return `export CLAUDE_USAGE_TOKEN="$(cat ${file} 2>/dev/null)"  # claude-usage`;
+  return `export CLAUDE_USAGE_TOKEN="$(cat ${file} 2>/dev/null)"  # agent-runway`;
 }
 
 // ------------------------------------------------------------------- terminal
@@ -224,7 +224,7 @@ async function configureEnv(token) {
   } catch {
     /* the profile may not exist yet */
   }
-  if (existing.includes("# claude-usage")) {
+  if (existing.includes("# agent-runway")) {
     out(`  ${profile} already has the line; left untouched.`);
     return "already";
   }
@@ -246,11 +246,11 @@ function printNextSteps() {
   out("Next steps");
   out("");
   out("  Check usage any time:");
-  out("    claude-usage");
+  out("    agent-runway");
   out("");
   out("  Use it from Claude Code (skill + MCP tool):");
-  out("    /plugin marketplace add jberdah/claude-usage");
-  out("    /plugin install claude-usage@claude-usage");
+  out("    /plugin marketplace add jberdah/agent-runway");
+  out("    /plugin install agent-runway@agent-runway");
   out("");
   out("  Use it as an MCP tool in another client:");
   out(`    node ${path.join(PACKAGE_ROOT, "src", "mcp.mjs")}`);
@@ -263,7 +263,7 @@ export async function setup(argv = []) {
   const force = argv.includes("--force");
 
   out("");
-  out(`claude-usage ${VERSION} - setup`);
+  out(`agent-runway ${VERSION} - setup`);
   out("");
 
   // 1. Is it already working?

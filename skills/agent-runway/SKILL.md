@@ -1,9 +1,9 @@
 ---
-name: claude-usage
+name: agent-runway
 description: Check the remaining quota on the current Claude subscription - the 5-hour session window, the weekly windows, how much of each is consumed and when they reset. Use when the user asks "how much usage do I have left", "am I close to the limit", "when does my quota reset", "check my usage", "am I rate limited", or before starting a long task or a fan-out of subagents, to confirm there is enough headroom.
 ---
 
-# Claude usage
+# Agent runway
 
 Reports the rate-limit windows of the signed-in Claude subscription.
 
@@ -18,7 +18,7 @@ If the skill was copied manually instead of installed as a plugin,
 cloned, or the globally installed binary:
 
 ```bash
-claude-usage
+agent-runway
 ```
 
 | Flag | Output |

@@ -9,7 +9,7 @@ import path from "node:path";
 
 export const VERSION = "0.1.0";
 
-const USER_AGENT = `claude-usage/${VERSION} (+https://github.com/anthropics/claude-usage)`;
+const USER_AGENT = `agent-runway/${VERSION} (+https://github.com/jberdah/agent-runway)`;
 
 /** Errors this module throws, with a stable `code` so callers can branch. */
 export class UsageError extends Error {

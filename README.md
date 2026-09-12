@@ -1,15 +1,23 @@
-# claude-usage
+# agent-runway
 
-Check how much of your Claude subscription quota is left — the 5-hour session
-window, the weekly windows, how much of each is consumed, and when they reset.
+How much runway is left before your coding agent hits a rate limit — which
+windows are consumed, and when each one resets.
 
-Same data three ways: a **CLI**, a **Claude Code skill**, and an **MCP tool** any
-client can call.
+Same answer three ways: a **CLI**, a **Claude Code skill**, and an **MCP tool**
+any client can call, so the reasoning happens once instead of in every model.
+
+> **Unofficial.** This reads undocumented Anthropic endpoints. It can stop
+> working without notice and is not a compatibility contract with anyone.
+
+**Claude works today. Codex and GitHub Copilot are next** — the provider
+adapters are the next piece of work, not a promise already delivered.
+
+*Part of the [brainclaw](https://brainclaw.dev) toolkit.*
 
 ```
-$ claude-usage
+$ agent-runway
 
-Claude usage
+Runway - Claude
 
   Session (5h)                    [###.................]  15 %
                                   resets 2026-09-12 02:40Z (in 4h 44m)
@@ -35,14 +43,14 @@ to the terminal, to a skill, and to any MCP client.
 ### Quickest path
 
 ```bash
-npm install -g claude-usage
-claude-usage setup
+npm install -g agent-runway
+agent-runway setup
 ```
 
 Or without installing anything globally:
 
 ```bash
-git clone https://github.com/jberdah/claude-usage && cd claude-usage
+git clone https://github.com/jberdah/agent-runway && cd agent-runway
 node src/cli.mjs setup
 ```
 
@@ -58,8 +66,8 @@ unless you pass `--force`.
 ### As a Claude Code plugin (skill + MCP tool)
 
 ```
-/plugin marketplace add jberdah/claude-usage
-/plugin install claude-usage@claude-usage
+/plugin marketplace add jberdah/agent-runway
+/plugin install agent-runway@agent-runway
 ```
 
 Claude then reads your usage whenever it is relevant — ask "how much quota do I
@@ -74,9 +82,9 @@ enough.
 // Claude Desktop: claude_desktop_config.json
 {
   "mcpServers": {
-    "claude-usage": {
+    "agent-runway": {
       "command": "node",
-      "args": ["/absolute/path/to/claude-usage/src/mcp.mjs"]
+      "args": ["/absolute/path/to/agent-runway/src/mcp.mjs"]
     }
   }
 }
@@ -85,21 +93,21 @@ enough.
 For Claude Code specifically:
 
 ```bash
-claude mcp add claude-usage -- node /absolute/path/to/claude-usage/src/mcp.mjs
+claude mcp add agent-runway -- node /absolute/path/to/agent-runway/src/mcp.mjs
 ```
 
 ### As a CLI
 
 ```bash
-npm install -g claude-usage    # or: git clone && npm link
-claude-usage --short
+npm install -g agent-runway    # or: git clone && npm link
+agent-runway --short
 ```
 
 Cloning is enough to run it — `node src/cli.mjs` needs nothing installed.
 
 ## Authentication
 
-`claude-usage setup` handles this. What follows is what it does, for anyone who
+`agent-runway setup` handles this. What follows is what it does, for anyone who
 would rather do it by hand or automate it.
 
 A long-lived token comes from `claude setup-token`, which opens a browser and
@@ -115,7 +123,7 @@ sometimes committed to a dotfiles repository. One 0600 file is safer, behaves
 identically on all three platforms, is picked up by every invocation whatever
 your shell, and is revoked by deleting it.
 
-`claude-usage setup --env` still wires up the variable if you want it. On POSIX
+`agent-runway setup --env` still wires up the variable if you want it. On POSIX
 it appends an indirection rather than a second copy of the secret:
 
 ```sh

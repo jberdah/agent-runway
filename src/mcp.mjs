@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// MCP stdio server exposing Claude usage as a native tool to any MCP client
+// MCP stdio server exposing remaining runway as a native tool to any MCP client
 // (Claude Desktop, Claude Code, Cursor, ...).
 //
 // Deliberately dependency-free: a Claude Code plugin installed from git is not
@@ -19,14 +19,15 @@ const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 
 const TOOL = {
-  name: "get_claude_usage",
-  title: "Get Claude usage",
+  name: "get_usage",
+  title: "Get remaining runway",
   description:
-    "Read the current rate-limit windows of the signed-in Claude subscription: " +
+    "Read the current rate-limit windows of the signed-in coding agent subscription: " +
     "percentage consumed of the 5-hour session window and of the weekly windows, " +
     "plus when each one resets. Use it when the user asks how much quota is left, " +
     "or before starting a long task or a fan-out of subagents, to check there is " +
-    "enough headroom. Returns no credentials.",
+    "enough headroom. Reads Claude today; a provider argument will be added once " +
+    "other agents are supported. Returns no credentials.",
   inputSchema: {
     type: "object",
     properties: {
@@ -118,7 +119,7 @@ async function handle(message) {
       reply(id, {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "claude-usage", version: VERSION },
+        serverInfo: { name: "agent-runway", version: VERSION },
       });
       return;
     }
@@ -170,7 +171,7 @@ input.on("line", (line) => {
 
   const pending = handle(message)
     .catch((error) => {
-      process.stderr.write(`claude-usage-mcp: ${error?.stack ?? error}\n`);
+      process.stderr.write(`agent-runway-mcp: ${error?.stack ?? error}\n`);
       if (message?.id != null) replyError(message.id, -32603, "Internal error");
     })
     .finally(() => inFlight.delete(pending));

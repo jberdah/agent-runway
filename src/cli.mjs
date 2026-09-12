@@ -4,13 +4,14 @@
 import { fetchUsage, UsageError, VERSION } from "./core.mjs";
 import { renderShort, renderTable } from "./render.mjs";
 
-const HELP = `claude-usage ${VERSION}
+const HELP = `agent-runway ${VERSION}
 
-Show the rate-limit windows of your Claude subscription.
+Show how much runway is left before you hit a rate limit.
+Reads Claude today; Codex and Copilot are next.
 
 Usage:
-  claude-usage [options]
-  claude-usage setup [--env] [--force]
+  agent-runway [options]
+  agent-runway setup [--env] [--force]
 
 Commands:
   setup        Guided first-time setup: create a token, check it, save it.
@@ -73,7 +74,7 @@ async function main(argv) {
   if (has("--plain")) {
     process.stdout.write(`${body}\n`);
   } else {
-    process.stdout.write(`\nClaude usage\n\n${body}\n`);
+    process.stdout.write(`\nRunway - Claude\n\n${body}\n`);
   }
   return 0;
 }
@@ -84,11 +85,11 @@ main(process.argv.slice(2))
   })
   .catch((error) => {
     if (error instanceof UsageError) {
-      process.stderr.write(`claude-usage: ${error.message}\n`);
+      process.stderr.write(`agent-runway: ${error.message}\n`);
       if (error.hint) process.stderr.write(`\n${error.hint}\n`);
       process.exitCode = EXIT[error.code] ?? 1;
       return;
     }
-    process.stderr.write(`claude-usage: unexpected error: ${error?.message ?? error}\n`);
+    process.stderr.write(`agent-runway: unexpected error: ${error?.message ?? error}\n`);
     process.exitCode = 1;
   });

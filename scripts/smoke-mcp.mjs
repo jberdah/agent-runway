@@ -31,7 +31,7 @@ for (const tool of tools) {
 
 for (const format of ["short", "summary"]) {
   const result = await client.callTool({
-    name: "get_claude_usage",
+    name: "get_usage",
     arguments: { format },
   });
   console.log(`\n--- format=${format} isError=${Boolean(result.isError)} ---`);
