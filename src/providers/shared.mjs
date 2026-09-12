@@ -56,9 +56,20 @@ export function makeWindow({
   model = null,
   unit = "requests",
 }) {
-  const startsAt =
+  // A start can only be derived from a window that is actually running. When a
+  // provider has nothing to report it answers with the whole window ahead —
+  // Codex returns reset_at = now + 18000s at 0% consumption — and subtracting
+  // the duration then yields "now", which reads as a window that just began
+  // when none has. A start that lands on or after the present moment is not a
+  // measurement, so it is withheld rather than invented.
+  const derivedStart =
     resetsAt && Number.isFinite(windowSeconds)
-      ? new Date(Date.parse(resetsAt) - windowSeconds * 1000).toISOString()
+      ? Date.parse(resetsAt) - windowSeconds * 1000
+      : null;
+  const UNKNOWABLE_MS = 60_000;
+  const startsAt =
+    derivedStart != null && derivedStart < Date.now() - UNKNOWABLE_MS
+      ? new Date(derivedStart).toISOString()
       : null;
 
   return {

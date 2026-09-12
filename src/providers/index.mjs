@@ -106,7 +106,7 @@ export function capacity(results, { threshold = 90 } = {}) {
     if (r.allowed === false) {
       return {
         provider: r.provider, label: r.label, decision: "defer", reason: "provider_says_limit_reached",
-        binding, retryAt: binding.resetsAt, retryAtBasis: "reported_reset",
+        binding, windows: r.windows, retryAt: binding.resetsAt, retryAtBasis: "reported_reset",
       };
     }
 
@@ -117,6 +117,10 @@ export function capacity(results, { threshold = 90 } = {}) {
       decision: over ? "defer" : "proceed",
       reason: over ? "threshold_exceeded" : "within_threshold",
       binding,
+      // The binding window decides, but hiding the rest loses information the
+      // read already paid for: a session at 0% next to a weekly at 89% is a
+      // different situation from a session at 0% alone.
+      windows: r.windows,
       retryAt: over ? binding.resetsAt : null,
       // The reset is when the window rolls over, not a promise that service
       // resumes exactly then. Naming the basis keeps the two apart.

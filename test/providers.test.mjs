@@ -230,3 +230,40 @@ test("no usable provider yields no recommendation rather than a bad one", () => 
   );
   assert.equal(decision.recommended, null);
 });
+
+test("a start is only derived from a window that is actually running", () => {
+  const now = Date.now();
+
+  // Codex at 0% answers with the whole window ahead: reset = now + 18000s.
+  // Subtracting the duration yields "now", which would read as a window that
+  // just began when none has.
+  const notStarted = makeWindow({
+    kind: "session", percentUsed: 0, windowSeconds: 18000,
+    resetsAt: new Date(now + 18000 * 1000).toISOString(),
+  });
+  assert.equal(notStarted.startsAt, null, "an unknowable start is withheld, not invented");
+
+  // A window well into its life does have a knowable start.
+  const running = makeWindow({
+    kind: "session", percentUsed: 40, windowSeconds: 18000,
+    resetsAt: new Date(now + 3600 * 1000).toISOString(),
+  });
+  assert.ok(running.startsAt, "a window with time already elapsed reports its start");
+  assert.ok(Date.parse(running.startsAt) < now);
+});
+
+test("capacity carries every window, not only the binding one", () => {
+  const windows = [
+    makeWindow({ kind: "session", percentUsed: 0 }),
+    makeWindow({ kind: "weekly", percentUsed: 89 }),
+  ];
+  const decision = capacity([
+    { provider: "claude", label: "Claude", status: "ok", allowed: null, windows },
+  ], { threshold: 90 });
+
+  const [only] = decision.providers;
+  assert.equal(only.binding.kind, "weekly", "the decision still rests on the binding window");
+  // A session at 0% beside a weekly at 89% is not a session at 0% alone.
+  assert.equal(only.windows.length, 2);
+  assert.deepEqual(only.windows.map((w) => w.kind), ["session", "weekly"]);
+});
