@@ -65,7 +65,9 @@ const TOOLS = [
       "is when the window rolls over and not a promise that service resumes " +
       "exactly then. The recommendation states its own rule and whether the " +
       "candidates were comparable at all: 0% of a five-hour window is not 0% of " +
-      "a monthly allowance.",
+      "a monthly allowance. Asking whether YOU can keep working is a different " +
+      "question from whether any agent on the machine could take the job: pass " +
+      "provider for the first, rule=any for the second.",
     inputSchema: {
       type: "object",
       properties: {
@@ -77,6 +79,22 @@ const TOOLS = [
             "Percent consumed above which to defer. A policy, not a fact: at 92% " +
             "the provider is not blocked, your rule says do not start. Default 90.",
         },
+        provider: {
+          type: "string",
+          enum: [...PROVIDERS, "all"],
+          description:
+            "Restrict the decision to one agent. Pass the agent you are running " +
+            "as when the question is whether to continue this session; otherwise " +
+            "a comfortable provider elsewhere on the machine can mask yours.",
+        },
+        rule: {
+          type: "string",
+          enum: ["all", "any"],
+          description:
+            "How per-provider decisions combine. 'all' (default) defers unless " +
+            "every provider read is under the threshold. 'any' proceeds when one " +
+            "of them has room, which answers a fan-out, not your own runway.",
+        },
       },
       additionalProperties: false,
     },
@@ -84,10 +102,11 @@ const TOOLS = [
       type: "object",
       properties: {
         threshold: { type: "number" },
+        overall: LOOSE,
         providers: { type: "array", items: LOOSE },
         anyUnknown: { type: "boolean" },
       },
-      required: ["threshold", "providers", "anyUnknown"],
+      required: ["threshold", "overall", "providers", "anyUnknown"],
       additionalProperties: true,
     },
   },
@@ -151,12 +170,18 @@ async function getUsage(args) {
 
 async function checkCapacity(args) {
   const { readAll, capacity } = await import("./providers/index.mjs");
-  const decision = capacity(await readAll(), { threshold: args?.threshold ?? 90 });
 
-  const lines = decision.providers.map(
+  const wanted = args?.provider && args.provider !== "all" ? [args.provider] : undefined;
+  const decision = capacity(await readAll(wanted ? { providers: wanted } : {}), {
+    threshold: args?.threshold ?? 90,
+    rule: args?.rule === "any" ? "any" : "all",
+  });
+
+  const lines = [`${decision.overall.decision}: ${decision.overall.ruleText}`, ""];
+  lines.push(...decision.providers.map(
     (p) => `${p.provider}: ${p.decision}${p.binding ? ` (${p.binding.label} ${p.binding.percentUsed}%)` : ""}` +
       `${p.retryAt ? ` - retry at ${p.retryAt}` : ""}`
-  );
+  ));
   if (decision.recommended) {
     lines.push("");
     lines.push(

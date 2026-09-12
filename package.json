@@ -1,6 +1,6 @@
 {
   "name": "agent-runway",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Quota and model discovery for the coding agents installed on this machine: how much runway each has left, and which model slugs each binary will actually accept.",
   "type": "module",
   "license": "MIT",
@@ -14,7 +14,7 @@
     "url": "https://github.com/jberdah/agent-runway/issues"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "bin": {
     "agent-runway": "src/cli.mjs",

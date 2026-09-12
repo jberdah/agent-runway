@@ -24,12 +24,19 @@ jobs:
         # branches are exercised, but only a real macOS runner proves the
         # assumptions about process spawning and file modes.
         os: [ubuntu-latest, windows-latest, macos-latest]
-        # 22 is Active LTS, 24 is current. Linux covers both; the other two
-        # platforms run the newer one, which keeps the matrix at four jobs.
-        node: [22, 24]
+        # The floor has to be measured, not asserted: package.json says what it
+        # supports, and the oldest version here is what earns that claim. 20 is
+        # past end-of-life but still what corporate machines ship, which is
+        # where a tool that makes one HTTP request is most worth having. Linux
+        # covers the range; the other platforms run current.
+        node: [20, 22, 24]
         exclude:
           - os: windows-latest
+            node: 20
+          - os: windows-latest
             node: 22
+          - os: macos-latest
+            node: 20
           - os: macos-latest
             node: 22
 

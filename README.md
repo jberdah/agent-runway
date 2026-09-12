@@ -226,6 +226,25 @@ claude.ai fallback endpoint.
 Before delegating work, an agent needs both halves of the answer, and getting
 them from two different tools defeats the point:
 
+### What is covered, and what is not
+
+Not every agent answers both questions. Antigravity reports a quota and cannot
+be spawned; Gemini can be spawned and publishes no usage endpoint. Reading a
+missing cell as zero would be worse than reading nothing.
+
+| Agent | Runway | Model list | `resolve` |
+| --- | --- | --- | --- |
+| Claude | yes — token, or session cookie | inferred, by scanning the binary | yes |
+| Codex | yes | declared, from `codex app-server` | yes |
+| GitHub Copilot | yes — through `gh` | declared, from shell completion | yes |
+| Gemini | **no endpoint** | inferred, by scanning the binary | yes |
+| Antigravity | yes — only while its IDE runs | **not covered** | **not spawnable** |
+
+*Declared* means the binary was asked and answered. *Inferred* means slugs were
+recovered from the binary itself: indicative, not authoritative — a spawn can
+still be refused, and every inferred catalogue is labelled as such in the
+output.
+
 **How much runway is left, per provider.**
 
 ```bash
@@ -307,8 +326,33 @@ unknown. Three outcomes rather than two, because a provider that could not be
 read has not got room — it is simply unknown, and must never be counted as
 either.
 
-The recommendation states its own rule and whether the candidates were even
-comparable: 0% of a five-hour window is not 0% of a monthly allowance.
+### Two questions that are easy to confuse
+
+*Can I keep working?* and *could anything on this machine take this job?* are
+not the same question, and answering the second when the first was asked is how
+an agent talks itself into a fan-out it has no room for. Claude at 96% beside
+Codex at 10% is **not** a green light.
+
+```bash
+agent-runway --gate 90 --provider claude   # about one agent: yours
+agent-runway --gate 90                     # defers unless every provider has room
+agent-runway --gate 90 --any               # the fan-out question, asked by name
+```
+
+The answer carries the rule that produced it, so `proceed` can never be read as
+more than it claims:
+
+```json
+"overall": {
+  "decision": "defer",
+  "rule": "all",
+  "ruleText": "every readable provider is under the threshold",
+  "scoped": null
+}
+```
+
+The recommendation likewise states its own rule and whether the candidates were
+even comparable: 0% of a five-hour window is not 0% of a monthly allowance.
 
 ## CLI reference
 
@@ -316,20 +360,35 @@ comparable: 0% of a five-hour window is not 0% of a monthly allowance.
 | --- | --- |
 | *(none)* | Claude only, readable table |
 | `--all` | Every provider found on this machine |
+| `--provider <id>` | One provider only — use it when asking about yourself |
 | `--models` | What each install accepts, and where installs disagree |
 | `resolve <agent>` | Binary, valid slugs and a verdict on one model |
 | `--gate <N>` | Decision as JSON plus an exit code |
+| `--any` | With `--gate`: proceed if any one provider has room |
 | `--short` | One line: `session=15%  weekly_all=79%  weekly_scoped=52%` |
-| `--json` | Raw response; combines with `--models` |
+| `--json` | Normalized JSON, always carrying `tool` / `version` / `kind` |
+| `--raw` | The provider's own payload, unwrapped — not a stable contract |
 | `--plain` | Table without the header |
+
+Everything printed under `--json` declares which question it answers, so a
+parser never has to know what was asked to read the answer:
+
+| `kind` | Produced by |
+| --- | --- |
+| `usage` | *(none)*, `--all` |
+| `capacity` | `--gate` |
+| `models` | `--models` |
+| `resolve` | `resolve <agent>` |
 
 | Exit code | Meaning |
 | --- | --- |
-| 0 | success |
-| 1 | unexpected error |
+| 0 | success, or a gate that says proceed |
+| 1 | unexpected error, or an unusable argument |
 | 2 | no token found |
 | 3 | token rejected — regenerate it |
 | 4 | the usage endpoint is throttling; not your quota |
+| 10 | gate: defer |
+| 11 | gate: unknown — a provider could not be read |
 
 ## Security
 

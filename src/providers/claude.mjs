@@ -15,6 +15,29 @@ export const label = "Claude";
 const DERIVED_SECONDS = { session: 5 * 3600, weekly_all: 7 * 86400, weekly_scoped: 7 * 86400 };
 const LABELS = { session: "Session (5h)", weekly_all: "Weekly - all models", weekly_scoped: "Weekly" };
 
+/**
+ * Core's reading, expressed in the shared window contract.
+ *
+ * Exported because the single-provider CLI path needs the same normalization
+ * the registry gets: a caller parsing `--json` and one parsing `--gate` must
+ * not receive two different descriptions of the same account.
+ */
+export function toWindows(usage) {
+  return usage.windows.map((w) => {
+    const seconds = DERIVED_SECONDS[w.id] ?? null;
+    return makeWindow({
+      kind: w.id,
+      label: LABELS[w.id] ?? w.label,
+      percentUsed: fromUsedPercent(w.percent),
+      resetsAt: w.resetsAt,
+      windowSeconds: seconds,
+      windowSource: seconds ? "derived" : null,
+      severity: w.severity,
+      model: w.model,
+    });
+  });
+}
+
 export async function read({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
   let usage;
   try {
@@ -30,19 +53,7 @@ export async function read({ env = process.env, fetchImpl = globalThis.fetch } =
     return unavailable(id, "error", String(error?.message ?? error));
   }
 
-  const windows = usage.windows.map((w) => {
-    const seconds = DERIVED_SECONDS[w.id] ?? null;
-    return makeWindow({
-      kind: w.id,
-      label: LABELS[w.id] ?? w.label,
-      percentUsed: fromUsedPercent(w.percent),
-      resetsAt: w.resetsAt,
-      windowSeconds: seconds,
-      windowSource: seconds ? "derived" : null,
-      severity: w.severity,
-      model: w.model,
-    });
-  });
+  const windows = toWindows(usage);
 
   // Extra credits mean a window at 100% is not necessarily a wall.
   const detail = usage.extraUsage?.enabled ? "extra usage credits enabled" : null;

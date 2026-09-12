@@ -252,6 +252,52 @@ test("a start is only derived from a window that is actually running", () => {
   assert.ok(Date.parse(running.startsAt) < now);
 });
 
+test("the two questions a gate can be asked give different answers", () => {
+  const results = [
+    reading("claude", [makeWindow({ kind: "session", percentUsed: 96 })]),
+    reading("codex", [makeWindow({ kind: "session", percentUsed: 10 })]),
+  ];
+
+  // "Can I keep working" - one provider out of room stops the answer.
+  const conservative = capacity(results, { threshold: 90 });
+  assert.equal(conservative.overall.decision, "defer");
+  assert.equal(conservative.overall.rule, "all");
+
+  // "Could anything on this machine take the job" - a different question, and
+  // it has to be asked by name rather than arrived at by default.
+  const fanOut = capacity(results, { threshold: 90, rule: "any" });
+  assert.equal(fanOut.overall.decision, "proceed");
+  assert.equal(fanOut.overall.scoped, null);
+});
+
+test("a known blocker outranks a provider that could not be read", () => {
+  const decision = capacity(
+    [
+      reading("claude", [makeWindow({ kind: "session", percentUsed: 96 })]),
+      { provider: "antigravity", label: "Antigravity", status: "unreachable", windows: [], detail: "IDE closed" },
+    ],
+    { threshold: 90 }
+  );
+  // Both stop the work, but "blocked until 14:00" is actionable where "could
+  // not tell" is not, so the answer names the one the caller can act on.
+  assert.equal(decision.overall.decision, "defer");
+});
+
+test("nothing readable at all is unknown, never proceed", () => {
+  const decision = capacity(
+    [{ provider: "a", label: "a", status: "no_credentials", windows: [], detail: "" }],
+    { threshold: 90 }
+  );
+  assert.equal(decision.overall.decision, "unknown");
+  assert.equal(capacity([], { threshold: 90 }).overall.decision, "unknown");
+});
+
+test("a single provider names itself as the scope of the answer", () => {
+  const decision = capacity([reading("codex", [makeWindow({ kind: "session", percentUsed: 10 })])], { threshold: 90 });
+  assert.equal(decision.overall.scoped, "codex");
+  assert.equal(decision.overall.decision, "proceed");
+});
+
 test("capacity carries every window, not only the binding one", () => {
   const windows = [
     makeWindow({ kind: "session", percentUsed: 0 }),

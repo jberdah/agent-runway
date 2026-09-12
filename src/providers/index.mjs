@@ -84,13 +84,47 @@ export async function readAll(options = {}) {
 export const readProvider = readOne;
 
 /**
+ * How the per-provider decisions combine into one answer.
+ *
+ * These are two different questions and conflating them is dangerous. "Can I
+ * keep working" is about the caller's own provider; "is there any agent that
+ * could take this" is about a fan-out. Answering the second when the first was
+ * asked reports room that the caller does not have — Claude at 96% beside
+ * Codex at 10% would come back as proceed.
+ *
+ * So the default is the conservative reading, and the permissive one has to be
+ * asked for by name. Scoping to a single provider makes the two identical,
+ * which is the form a caller asking about itself should use.
+ */
+const RULES = {
+  all: "every readable provider is under the threshold",
+  any: "at least one provider is under the threshold",
+};
+
+function overallDecision(providers, rule) {
+  if (!providers.length) return "unknown";
+  const has = (d) => providers.some((p) => p.decision === d);
+
+  if (rule === "any") {
+    if (has("proceed")) return "proceed";
+    return has("unknown") ? "unknown" : "defer";
+  }
+  // A provider known to be blocked outranks one that could not be read: both
+  // stop the work, and "blocked until 14:00" is actionable where "could not
+  // tell" is not.
+  if (has("defer")) return "defer";
+  if (has("unknown")) return "unknown";
+  return "proceed";
+}
+
+/**
  * Turn readings into a decision.
  *
  * `threshold` is a policy, not a fact: at 92% the provider is not blocked, the
  * caller's own rule says not to start. Three outcomes, because two are not
  * enough — a provider that cannot be read is "unknown", never "fine".
  */
-export function capacity(results, { threshold = 90 } = {}) {
+export function capacity(results, { threshold = 90, rule = "all" } = {}) {
   const providers = results.map((r) => {
     if (r.status !== "ok") {
       return { provider: r.provider, label: r.label, decision: "unknown", reason: r.status, detail: r.detail };
@@ -140,8 +174,18 @@ export function capacity(results, { threshold = 90 } = {}) {
 
   const cadences = new Set(usable.map((p) => p.binding.windowSeconds ?? "calendar"));
 
+  const decision = overallDecision(providers, rule);
+
   return {
     threshold,
+    // The one answer a caller acts on, carrying the rule that produced it so
+    // that "proceed" can never be read as more than it claims.
+    overall: {
+      decision,
+      rule: rule === "any" ? "any" : "all",
+      ruleText: RULES[rule] ?? RULES.all,
+      scoped: providers.length === 1 ? providers[0].provider : null,
+    },
     providers,
     recommended: recommended
       ? {

@@ -13,17 +13,47 @@ run**.
 All of these are safe, read-only, and print to stdout.
 
 ```bash
-agent-runway --all            # quota for every provider found
-agent-runway --models         # what each install accepts, and where installs disagree
-agent-runway --gate 90        # decision + exit code: 0 proceed, 10 defer, 11 unknown
+agent-runway --all                       # quota for every provider found
+agent-runway --models                    # what each install accepts, and where they disagree
+agent-runway --gate 90 --provider claude # can I keep working? 0 proceed, 10 defer, 11 unknown
+agent-runway --gate 90 --any             # could any agent here take this job?
 agent-runway resolve codex --model gpt-6-astra   # one answer before spawning
 ```
 
-Add `--json` to `--models` and `resolve` for machine-readable output. Bare
-`agent-runway` reads Claude only and is the fastest path when that is all you
-need.
+`--json` works on every command and always returns the same contract, tagged
+with `kind` (`usage`, `capacity`, `models`, `resolve`). `--raw` returns the
+provider's own payload and promises nothing. Bare `agent-runway` reads Claude
+only and is the fastest path when that is all you need.
 
 If the command is not on PATH, run it from the checkout: `node src/cli.mjs …`.
+
+## Asking the gate the right question
+
+**`--gate` without `--provider` is not about you.** It reads every provider on
+the machine, and by default defers unless all of them have room. Two failure
+modes to avoid:
+
+- Asking the bare question and reading `proceed` as *your* runway. Pass
+  `--provider claude` (or whichever agent you are running as) when the question
+  is whether to continue this session.
+- Asking `--any` and reading it as permission to work here. `--any` answers
+  *some agent on this machine has room* — which is about delegation, not about
+  you.
+
+The answer carries `overall.ruleText`. Quote it rather than paraphrasing
+`proceed`.
+
+## Coverage is uneven, and the gaps matter
+
+| Agent | Runway | Models | Spawnable |
+| --- | --- | --- | --- |
+| Claude, Codex, GitHub Copilot | yes | yes | yes |
+| Gemini | **no endpoint exists** | yes | yes |
+| Antigravity | only while its IDE runs | **no** | **no** |
+
+Never report a missing cell as zero, and never suggest delegating to
+Antigravity. If asked about Gemini's quota, say there is no endpoint to read
+rather than implying it is at zero or unknown-but-checkable.
 
 ## Reading a quota answer
 
@@ -70,6 +100,20 @@ refused, so a script can branch on it.
 
 **Offer the substitute, never apply it silently.** Running a different model
 than the user asked for, without saying so, is worse than failing.
+
+## When the answer is defer
+
+The tool stops at `retryAt` and `retryAtBasis`. It does not wake anything up,
+and it cannot save a conversation — a session that runs out of quota loses its
+context whatever this reports.
+
+So before proposing to wait for a reset, **write the state down**: what was
+done, what is left, the files and paths involved, in a file the user can hand
+to a fresh session. Offer the reset time as information the user acts on, not
+as a schedule the agent will keep.
+
+`retryAtBasis: "window_reset"` means the window rolls over then. It is not a
+promise that service resumes at that moment; say so when quoting it.
 
 ## Rules
 
