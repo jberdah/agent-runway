@@ -177,26 +177,10 @@ function askSecret(question) {
 
 // -------------------------------------------------------------------- actions
 
-function claudeCliAvailable() {
-  return new Promise((resolve) => {
-    const child = spawn("claude", ["--version"], { stdio: "ignore", shell: IS_WINDOWS });
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
-  });
-}
-
-/**
- * Run `claude setup-token` with the terminal attached so the user completes the
- * browser flow themselves. On Windows `claude` is a .cmd shim, which spawn
- * cannot exec directly, hence shell: true there.
- */
-function runClaudeSetupToken() {
-  return new Promise((resolve) => {
-    const child = spawn("claude", ["setup-token"], { stdio: "inherit", shell: IS_WINDOWS });
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
-  });
-}
+// Spawning `claude setup-token` used to live here. It was removed once the
+// endpoint answered "OAuth token does not meet scope requirement user:profile":
+// that command mints inference-scoped tokens, so offering to run it only led
+// users into a 403 they could not fix by trying again.
 
 /** Ask the API whether the token actually works. Shape checks are not enough. */
 async function validateToken(token) {
@@ -376,31 +360,15 @@ export async function setup(argv = []) {
   }
 
   out("");
-
-  // Ask before offering to create one: someone who already generated a token
-  // elsewhere should not have to decline a browser sign-in to reach the prompt.
-  if (!(await confirm("Do you already have a token to paste?", false))) {
-    out("");
-    out("`claude setup-token` opens a browser and prints a long-lived token.");
-    out("You run it and complete the sign-in yourself.");
-    out("");
-
-    if (await claudeCliAvailable()) {
-      if (await confirm("Run `claude setup-token` now?", true)) {
-        out("");
-        const completed = await runClaudeSetupToken();
-        if (!completed) {
-          out("");
-          out("That did not complete. You can run `claude setup-token` in another");
-          out("terminal and come back with the token.");
-        }
-      }
-    } else {
-      out("The `claude` CLI was not found. Install it, or generate a token elsewhere:");
-      out("    npm install -g @anthropic-ai/claude-code");
-      out("    claude setup-token");
-    }
-  }
+  out("Note: `claude setup-token` does NOT help here. The token it mints carries");
+  out("inference scopes, and the usage endpoint requires user:profile, so it is");
+  out("refused with a 403 no matter how many times it is regenerated.");
+  out("");
+  out("Claude usage is readable today only through Claude Code's own session");
+  out("credentials, so the practical answer is to keep Claude Code signed in.");
+  out("");
+  out("If you do hold a token carrying user:profile, paste it now; otherwise stop");
+  out("here with Ctrl-C and just sign in to Claude Code.");
 
   // 3. Take it, validate it, and only then store it.
   out("");

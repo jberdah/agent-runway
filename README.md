@@ -110,14 +110,41 @@ Cloning is enough to run it — `node src/cli.mjs` needs nothing installed.
 `agent-runway setup` handles this. What follows is what it does, for anyone who
 would rather do it by hand or automate it.
 
-A long-lived token comes from `claude setup-token`, which opens a browser and
-prints an account secret. Setup can launch it for you, but **you** complete the
-sign-in — no tool should authenticate on your behalf.
+### Claude has no durable credential today
 
-"Long-lived" is that command's own wording; its exact lifetime is not something
-this project has measured. What matters here is the contrast with the last
-fallback source below, which is a session token that expires within hours unless
-Claude Code is running to refresh it.
+This is the project's sharpest limitation, and it was found by trying rather
+than by reading docs.
+
+`claude setup-token` mints a long-lived token, and it does **not** work here:
+
+```
+HTTP 403 - OAuth token does not meet scope requirement user:profile
+```
+
+That command grants inference scopes. The usage endpoint wants `user:profile`,
+which it does not issue, so regenerating the token produces the same refusal
+every time. There is no flag to ask for a wider scope.
+
+What does carry `user:profile` is the session credential Claude Code keeps for
+itself, and that is refreshed only while Claude Code is running. So:
+
+| Situation | Claude usage readable |
+| --- | --- |
+| Claude Code in active use | yes |
+| Claude Code idle for hours, or signed out | no |
+| A scheduled job on an otherwise quiet machine | no |
+
+In practice this bites less than it sounds: an agent checking its own runway
+mid-task is running inside Claude Code, so the credential is fresh exactly when
+it is needed. What it does rule out is the unattended case — waking up at a
+reset to see whether the quota came back.
+
+**Codex, Copilot and Antigravity are unaffected.** Each has a durable credential
+of its own, which is part of why this tool covers more than one provider.
+
+Refreshing Claude Code's token ourselves is possible in principle and is
+deliberately not done: the refresh token rotates on use, so a background tool
+racing Claude Code for it could sign the user out of their own editor.
 
 ### Why a file rather than an environment variable
 

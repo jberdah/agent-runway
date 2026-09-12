@@ -242,11 +242,18 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
   const authFailed = failures.some((f) => /HTTP 40[13]/.test(f));
   if (authFailed) {
     const stale = resolved.expiredAt ? ` The token expired at ${resolved.expiredAt}.` : "";
+    const scopeProblem = failures.some((f) => /scope|permission/i.test(f));
     throw new UsageError(
       "AUTH",
       `Token rejected (source: ${resolved.source}).${stale}\n  ` + failures.join("\n  "),
-      "If the message above mentions a scope or permission, this token is valid but was\n" +
-        "minted for a different purpose, and no amount of regenerating it will help."
+      scopeProblem
+        ? "This token is valid, but not for reading usage. The endpoint requires the\n" +
+          "user:profile scope, and `claude setup-token` does not grant it - regenerating\n" +
+          "the token produces exactly the same refusal.\n\n" +
+          "Claude usage can only be read with Claude Code's own session credentials\n" +
+          "today, which means keeping Claude Code signed in. Codex, Copilot and\n" +
+          "Antigravity are unaffected: they have durable credentials of their own."
+        : "Sign in to Claude Code, or supply a token carrying the user:profile scope."
     );
   }
   const reachable = failures.some((f) => /HTTP \d/.test(f));
