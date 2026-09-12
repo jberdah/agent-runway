@@ -218,6 +218,58 @@ export async function modelsForAll(installs, options) {
   );
 }
 
+/**
+ * Everything needed to invoke one agent correctly, in a single answer.
+ *
+ * Shaped for the caller that already knows how to build a command line and only
+ * lacks the two facts that make it work: which binary, and which slug that
+ * binary accepts. brainclaw, for instance, carries invoke templates and a
+ * model_flag for thirteen agents but resolves the binary with a bare `where`
+ * and never checks the slug against it.
+ *
+ * `contract` is here so that consumers can depend on the shape and be told when
+ * it changes, rather than discovering it through a crash.
+ */
+export async function resolveAgent(agent, { installs, model = null, capacity = null } = {}) {
+  const mine = installs.filter((i) => i.agent === agent);
+  const catalogues = await modelsForAll(mine);
+  const usable = catalogues.filter((c) => !c.error && c.models.length);
+
+  // PATH first, because invoking the agent by name is what a spawn does. Then
+  // the highest version, as the most complete catalogue.
+  const preferred =
+    usable.find((c) => c.kind === "path") ??
+    [...usable].sort((a, b) => String(b.version ?? "").localeCompare(String(a.version ?? "")))[0] ??
+    null;
+
+  const answer = {
+    contract: 1,
+    agent,
+    resolved: Boolean(preferred),
+    binary: preferred?.path ?? null,
+    version: preferred?.version ?? null,
+    authority: preferred?.authority ?? null,
+    models: preferred?.models.map((m) => m.id) ?? [],
+    alternatives: catalogues
+      .filter((c) => c !== preferred)
+      .map((c) => ({ kind: c.kind, version: c.version, path: c.path, models: c.models.map((m) => m.id), error: c.error })),
+    capacity,
+  };
+
+  if (model) {
+    const valid = answer.models.includes(model);
+    answer.model = {
+      requested: model,
+      valid,
+      // The useful half of a rejection: the same slug often works elsewhere.
+      availableIn: valid ? [] : whoCanRun(model, catalogues).map((c) => ({ kind: c.kind, version: c.version, path: c.path })),
+      // Never invent a substitute silently; offer one and let the caller decide.
+      suggestion: valid ? null : answer.models[0] ?? null,
+    };
+  }
+  return answer;
+}
+
 /** Which of these installs will accept a given slug. */
 export function whoCanRun(slug, catalogues) {
   return catalogues.filter((c) => c.models.some((m) => m.id === slug));

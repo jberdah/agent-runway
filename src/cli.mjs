@@ -72,6 +72,48 @@ async function main(argv) {
     return setup(argv.slice(1));
   }
 
+  // Everything needed to invoke one agent, in one answer. Meant for a caller
+  // that already builds command lines and only lacks the binary and a valid
+  // slug — brainclaw resolves the first with a bare `where` and never checks
+  // the second.
+  if (argv[0] === "resolve") {
+    const agent = argv[1];
+    const [{ discoverInstalls }, models] = await Promise.all([
+      import("./installs.mjs"),
+      import("./models.mjs"),
+    ]);
+
+    if (!models.SPAWNABLE.includes(agent)) {
+      process.stderr.write(`agent-runway: resolve needs one of ${models.SPAWNABLE.join(", ")}\n`);
+      return 1;
+    }
+
+    const flag = (name) => {
+      const i = argv.findIndex((a) => a === name || a.startsWith(`${name}=`));
+      return i === -1 ? null : argv[i].split("=")[1] ?? argv[i + 1] ?? null;
+    };
+
+    // Capacity is only consulted when asked: it costs a network round trip,
+    // and "which slug" is often the whole question.
+    let capacity = null;
+    if (has("--with-capacity")) {
+      const { readAll, capacity: decide } = await import("./providers/index.mjs");
+      const decision = decide(await readAll({ providers: [agent] }), { threshold: 90 });
+      capacity = decision.providers[0] ?? null;
+    }
+
+    const answer = await models.resolveAgent(agent, {
+      installs: discoverInstalls({ withVersions: true }),
+      model: flag("--model"),
+      capacity,
+    });
+
+    process.stdout.write(`${JSON.stringify(answer, null, 2)}\n`);
+    // An unresolvable agent, or a slug its binary refuses, is a failed
+    // precondition rather than a crash: exit 1 so a script can branch.
+    return answer.resolved && answer.model?.valid !== false ? 0 : 1;
+  }
+
   // What each install will accept as a model. A separate question from quota,
   // and the one that decides whether a delegation's -m argument is valid.
   if (has("--models")) {
