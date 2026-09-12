@@ -32,6 +32,29 @@ to the terminal, to a skill, and to any MCP client.
 
 ## Install
 
+### Quickest path
+
+```bash
+npm install -g claude-usage
+claude-usage setup
+```
+
+Or without installing anything globally:
+
+```bash
+git clone https://github.com/jberdah/claude-usage && cd claude-usage
+node src/cli.mjs setup
+```
+
+`setup` is one guided pass, identical on Windows, macOS and Linux. It checks
+whether a token already works, runs `claude setup-token` for you if you want it
+to (you complete the browser sign-in), reads the token back without echoing it,
+**validates it against the API before saving anything**, then writes it to
+`~/.claude/usage-token` with mode 0600 and prints your current usage.
+
+Re-running it is safe: it reports that things already work and changes nothing
+unless you pass `--force`.
+
 ### As a Claude Code plugin (skill + MCP tool)
 
 ```
@@ -76,18 +99,34 @@ Cloning is enough to run it — `node src/cli.mjs` needs nothing installed.
 
 ## Authentication
 
-Generate a long-lived token **yourself** — it opens a browser and prints a
-year-long account secret, so no tool should do it for you:
+`claude-usage setup` handles this. What follows is what it does, for anyone who
+would rather do it by hand or automate it.
 
-```bash
-claude setup-token
+A long-lived token comes from `claude setup-token`, which opens a browser and
+prints a year-long account secret. Setup can launch it for you, but **you**
+complete the sign-in — no tool should authenticate on your behalf.
+
+### Why a file rather than an environment variable
+
+Setup writes the token to `~/.claude/usage-token` (mode 0600) instead of
+exporting it. On macOS and Linux, a persistent environment variable means
+writing the secret into a shell rc file, which is commonly mode 644 and
+sometimes committed to a dotfiles repository. One 0600 file is safer, behaves
+identically on all three platforms, is picked up by every invocation whatever
+your shell, and is revoked by deleting it.
+
+`claude-usage setup --env` still wires up the variable if you want it. On POSIX
+it appends an indirection rather than a second copy of the secret:
+
+```sh
+export CLAUDE_USAGE_TOKEN="$(cat $HOME/.claude/usage-token 2>/dev/null)"
 ```
 
-Then export it:
+On Windows it sets a user-level variable, passing the value through stdin so the
+token never appears in a process list.
 
-```bash
-export CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-..."
-```
+Environment variables remain the right mechanism in CI, where the secret comes
+from the platform's own secret store.
 
 Sources are tried in this order, first match wins:
 
@@ -165,6 +204,7 @@ hand-rolled framing is checked against the real implementation.
 src/core.mjs     token resolution, HTTP, response normalization
 src/render.mjs   text rendering
 src/cli.mjs      CLI entry point, also what the skill shells out to
+src/setup.mjs    guided cross-platform first-time setup
 src/mcp.mjs      MCP stdio server
 skills/          the Claude Code skill
 .claude-plugin/  plugin and marketplace manifests

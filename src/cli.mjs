@@ -10,6 +10,12 @@ Show the rate-limit windows of your Claude subscription.
 
 Usage:
   claude-usage [options]
+  claude-usage setup [--env] [--force]
+
+Commands:
+  setup        Guided first-time setup: create a token, check it, save it.
+               --env    also export CLAUDE_USAGE_TOKEN from your shell profile
+               --force  replace a token that already works
 
 Options:
   --short      One line, machine friendly: session=79%  weekly_all=76%
@@ -35,6 +41,13 @@ const EXIT = { NO_TOKEN: 2, AUTH: 3, RATE_LIMITED: 4 };
 
 async function main(argv) {
   const has = (...names) => names.some((n) => argv.includes(n));
+
+  // Loaded on demand: setup pulls in child_process and readline, which the
+  // common path (a single GET) has no use for.
+  if (argv[0] === "setup") {
+    const { setup } = await import("./setup.mjs");
+    return setup(argv.slice(1));
+  }
 
   if (has("-h", "--help")) {
     process.stdout.write(HELP);
