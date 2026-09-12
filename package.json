@@ -31,7 +31,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test \"test/**/*.test.mjs\"",
+    "test": "node scripts/run-tests.mjs",
     "start": "node src/cli.mjs",
     "mcp": "node src/mcp.mjs",
     "smoke": "node scripts/smoke-mcp.mjs",
