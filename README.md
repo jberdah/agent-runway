@@ -70,9 +70,16 @@ unless you pass `--force`.
 ### As a Claude Code plugin (skill + MCP tool)
 
 ```
-/plugin marketplace add jberdah/agent-runway
+/plugin marketplace add https://github.com/jberdah/agent-runway.git
 /plugin install agent-runway@agent-runway
 ```
+
+The full HTTPS URL rather than the `owner/repo` shorthand: the shorthand
+resolves to SSH, which fails on any machine that has not accepted GitHub's host
+key. If the clone then fails with *"self signed certificate in certificate
+chain"*, a proxy is inspecting TLS; on Windows, `git config --global
+http.sslBackend schannel` makes git trust the certificate store the rest of the
+system already uses.
 
 Claude then reads your usage whenever it is relevant — ask "how much quota do I
 have left?" or let it check before a long task.
@@ -356,10 +363,17 @@ npm run smoke   # drives the MCP server over stdio; needs network and a token
 ```
 
 The runtime has **zero dependencies**. `src/mcp.mjs` speaks JSON-RPC directly
-rather than importing the MCP SDK, because a Claude Code plugin installed from
-git is never `npm install`ed — an imported dependency would have to be vendored.
-`scripts/smoke-mcp.mjs` connects the official SDK client to it, so the
-hand-rolled framing is checked against the real implementation.
+rather than importing the MCP SDK, and `scripts/smoke-mcp.mjs` connects the
+official SDK client to it so the hand-rolled framing is checked against the real
+implementation.
+
+That choice was originally justified by a belief that a Claude Code plugin
+installed from git is never `npm install`ed. **That is wrong**: installing this
+plugin produced 91 packages in the plugin cache, devDependencies included. The
+constraint is kept anyway, for reasons that survive the correction — nobody
+installing a CLI that makes one HTTP request should wait on 91 packages, the
+supply-chain surface stays at zero, and it keeps working where `npm install`
+does not, which on a corporate network is not hypothetical.
 
 ```
 src/core.mjs     token resolution, HTTP, response normalization

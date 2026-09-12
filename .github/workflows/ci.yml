@@ -69,9 +69,11 @@ jobs:
         with:
           node-version: 24
 
-      # A Claude Code plugin installed from git is never npm-installed, so an
-      # imported dependency would silently break it for every plugin user.
-      # Asserting it here stops one being added by accident.
+      # Not because a plugin install skips npm — it does not, as installing this
+      # one demonstrated by producing 91 packages. The reasons that hold: an
+      # install that makes one HTTP request should not drag in a tree, the
+      # supply-chain surface stays at zero, and the tool keeps working where
+      # `npm install` fails, which behind a corporate proxy is routine.
       - name: package.json declares no dependencies
         run: |
           count=$(node -p "Object.keys(require('./package.json').dependencies ?? {}).length")
