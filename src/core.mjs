@@ -221,7 +221,14 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
       };
     }
 
-    failures.push(`${endpoint.name}: HTTP ${result.status}`);
+    // Carry the API's own words through. A rejection that says which scope is
+    // missing is worth far more than a bare "rejected", and this endpoint is
+    // undocumented enough that its reasons are the only source available.
+    const apiMessage =
+      (result.body && typeof result.body === "object"
+        ? result.body.error?.message ?? result.body.message ?? result.body.error?.type
+        : null) || null;
+    failures.push(`${endpoint.name}: HTTP ${result.status}${apiMessage ? ` - ${apiMessage}` : ""}`);
 
     if (result.status === 429) {
       throw new UsageError(
@@ -232,16 +239,16 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
     }
   }
 
-  const authFailed = failures.some((f) => f.includes("401") || f.includes("403"));
+  const authFailed = failures.some((f) => /HTTP 40[13]/.test(f));
   if (authFailed) {
     const stale = resolved.expiredAt ? ` The token expired at ${resolved.expiredAt}.` : "";
     throw new UsageError(
       "AUTH",
-      `Token rejected (source: ${resolved.source}).${stale}`,
-      "Generate a fresh one yourself with `claude setup-token`, then export it as CLAUDE_CODE_OAUTH_TOKEN."
+      `Token rejected (source: ${resolved.source}).${stale}\n  ` + failures.join("\n  "),
+      "If the message above mentions a scope or permission, this token is valid but was\n" +
+        "minted for a different purpose, and no amount of regenerating it will help."
     );
   }
-
   const reachable = failures.some((f) => /HTTP \d/.test(f));
   throw new UsageError(
     "NO_RESPONSE",
