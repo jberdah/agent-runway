@@ -146,6 +146,30 @@ Refreshing Claude Code's token ourselves is possible in principle and is
 deliberately not done: the refresh token rotates on use, so a background tool
 racing Claude Code for it could sign the user out of their own editor.
 
+### The one durable path: a session cookie
+
+There are two usage endpoints, and they take different credentials:
+
+| Endpoint | Credential | Verified |
+| --- | --- | --- |
+| `api.anthropic.com/api/oauth/usage` | Bearer OAuth, needs `user:profile` | 200 with Claude Code's session token, 403 with `setup-token` |
+| `claude.ai/api/organizations/{org}/usage` | **cookie only** | 403 to any Bearer: *"This endpoint does not accept OAuth access tokens"* |
+
+So the claude.ai endpoint is not a fallback for the first — it is a different
+door. Give it the `sessionKey` cookie from a signed-in claude.ai browser
+session and it answers, no OAuth scope involved, and it keeps working while
+Claude Code is closed:
+
+```bash
+# the value of the sessionKey cookie, pasted by you
+echo "sk-ant-sid01-..." > "$HOME/.claude/session-cookie"   # or AGENT_RUNWAY_CLAUDE_COOKIE
+```
+
+Weigh it honestly before using it. A session cookie is a **broader credential
+than an OAuth token** — it is the browser's full account session, not a scoped
+grant. It dies when you sign out, and it cannot be narrowed. This tool will
+never read it out of a browser profile: you paste it, or you go without.
+
 ### Why a file rather than an environment variable
 
 Setup writes the token to `~/.claude/usage-token` (mode 0600) instead of

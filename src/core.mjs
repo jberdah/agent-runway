@@ -78,17 +78,39 @@ export function resolveToken(env = process.env) {
   return null;
 }
 
+/**
+ * The claude.ai web session cookie, for the organizations endpoint.
+ *
+ * A separate credential from the OAuth token, and the only one that endpoint
+ * takes: it answers "This endpoint does not accept OAuth access tokens" to a
+ * Bearer, whatever its scopes. Supply the value of the `sessionKey` cookie.
+ *
+ * Never harvested from a browser profile — the user pastes it, or does not.
+ */
+export function resolveCookie(env = process.env) {
+  if (env.AGENT_RUNWAY_CLAUDE_COOKIE) {
+    return { value: env.AGENT_RUNWAY_CLAUDE_COOKIE, source: "env AGENT_RUNWAY_CLAUDE_COOKIE" };
+  }
+  try {
+    const value = fs.readFileSync(path.join(claudeDir(), "session-cookie"), "utf8").trim();
+    if (value) return { value, source: "~/.claude/session-cookie" };
+  } catch {
+    /* absent is the normal case */
+  }
+  return null;
+}
+
 /** Organization UUID, needed only by the claude.ai endpoint. */
 export function resolveOrgId(env = process.env) {
   return env.CLAUDE_ORG_ID || readCredentialsFile()?.organizationUuid || null;
 }
 
-async function request(url, token, fetchImpl) {
+async function request(url, authHeaders, fetchImpl) {
   let response;
   try {
     response = await fetchImpl(url, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...authHeaders,
         Accept: "application/json",
         "anthropic-beta": "oauth-2025-04-20",
         "User-Agent": USER_AGENT,
@@ -191,11 +213,24 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
   }
 
   const orgId = resolveOrgId(env);
-  const endpoints = [{ name: "oauth/usage", url: "https://api.anthropic.com/api/oauth/usage" }];
-  if (orgId) {
+  const cookie = resolveCookie(env);
+
+  // Each endpoint takes exactly one kind of credential. Sending a Bearer to
+  // claude.ai is not a fallback, it is a guaranteed 403 that only adds a
+  // confusing second line to every failure, so that endpoint is offered only
+  // when a session cookie exists to authenticate it.
+  const endpoints = [
+    {
+      name: "oauth/usage",
+      url: "https://api.anthropic.com/api/oauth/usage",
+      headers: { Authorization: `Bearer ${resolved.token}` },
+    },
+  ];
+  if (orgId && cookie) {
     endpoints.push({
       name: "organizations/usage",
       url: `https://claude.ai/api/organizations/${orgId}/usage`,
+      headers: { Cookie: `sessionKey=${cookie.value}` },
     });
   }
 
@@ -203,7 +238,7 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
   for (const endpoint of endpoints) {
     let result;
     try {
-      result = await request(endpoint.url, resolved.token, fetchImpl);
+      result = await request(endpoint.url, endpoint.headers, fetchImpl);
     } catch (error) {
       // A fallback that cannot be reached must not bury what the primary
       // endpoint already answered. Record it and keep going; the verdict is
