@@ -63,9 +63,9 @@ export function shellProfilePath(env = process.env, home = os.homedir(), platfor
  */
 export function envExportLine(profilePath, file = "$HOME/.claude/usage-token") {
   if (profilePath && profilePath.endsWith("config.fish")) {
-    return `set -gx CLAUDE_USAGE_TOKEN (cat ${file} 2>/dev/null); # agent-runway`;
+    return `set -gx AGENT_RUNWAY_TOKEN (cat ${file} 2>/dev/null); # agent-runway`;
   }
-  return `export CLAUDE_USAGE_TOKEN="$(cat ${file} 2>/dev/null)"  # agent-runway`;
+  return `export AGENT_RUNWAY_TOKEN="$(cat ${file} 2>/dev/null)"  # agent-runway`;
 }
 
 // ------------------------------------------------------------------- terminal
@@ -159,7 +159,7 @@ function runClaudeSetupToken() {
 async function validateToken(token) {
   try {
     const usage = await fetchUsage({
-      env: { CLAUDE_USAGE_TOKEN: token, CLAUDE_USAGE_NO_LOCAL_CREDENTIALS: "1" },
+      env: { AGENT_RUNWAY_TOKEN: token, AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1" },
     });
     return { ok: true, usage };
   } catch (error) {
@@ -200,10 +200,10 @@ async function configureEnv(token) {
     out("");
     out("  Note: on Windows the variable holds a second copy of the token.");
     out("  The token file alone is already picked up automatically.");
-    if (!(await confirm("  Set CLAUDE_USAGE_TOKEN for your user account anyway?", false))) {
+    if (!(await confirm("  Set AGENT_RUNWAY_TOKEN for your user account anyway?", false))) {
       return "skipped";
     }
-    const ok = await setWindowsUserEnv("CLAUDE_USAGE_TOKEN", token);
+    const ok = await setWindowsUserEnv("AGENT_RUNWAY_TOKEN", token);
     out(ok
       ? "  Set. Open a new terminal for it to take effect."
       : "  Could not set it; the token file still works.");
@@ -293,7 +293,7 @@ export async function setup(argv = []) {
     out("Run it from a terminal, or provide a token another way:");
     out("");
     out("  claude setup-token                       # then either");
-    out("  export CLAUDE_USAGE_TOKEN=sk-ant-...     # env var, good for CI");
+    out("  export AGENT_RUNWAY_TOKEN=sk-ant-...     # env var, good for CI");
     out(`  echo sk-ant-... > ${tokenPath()}   # or the token file`);
     return 1;
   }

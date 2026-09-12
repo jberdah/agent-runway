@@ -111,7 +111,7 @@ export const PROVIDERS = [
     },
     credentials: (home, env) => {
       if (env.CLAUDE_CODE_OAUTH_TOKEN) return "CLAUDE_CODE_OAUTH_TOKEN env";
-      if (env.CLAUDE_USAGE_TOKEN) return "CLAUDE_USAGE_TOKEN env";
+      if (env.AGENT_RUNWAY_TOKEN) return "AGENT_RUNWAY_TOKEN env";
       if (exists(path.join(home, ".claude", "usage-token"))) return "~/.claude/usage-token";
       if (exists(path.join(home, ".claude", ".credentials.json"))) {
         return "~/.claude/.credentials.json (often stale)";

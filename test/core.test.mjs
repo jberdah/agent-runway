@@ -77,20 +77,20 @@ test("normalize survives an unexpected shape", () => {
 test("resolveToken prefers the most explicit source", () => {
   const resolved = resolveToken({
     CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-a",
-    CLAUDE_USAGE_TOKEN: "sk-ant-oat01-b",
+    AGENT_RUNWAY_TOKEN: "sk-ant-oat01-b",
   });
   assert.equal(resolved.source, "env CLAUDE_CODE_OAUTH_TOKEN");
   assert.equal(resolved.token, "sk-ant-oat01-a");
 });
 
 test("resolveToken can be told never to read local credentials", () => {
-  const resolved = resolveToken({ CLAUDE_USAGE_NO_LOCAL_CREDENTIALS: "1" });
+  const resolved = resolveToken({ AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1" });
   assert.equal(resolved, null);
 });
 
 test("fetchUsage reports a missing token instead of throwing raw", async () => {
   await assert.rejects(
-    () => fetchUsage({ env: { CLAUDE_USAGE_NO_LOCAL_CREDENTIALS: "1" } }),
+    () => fetchUsage({ env: { AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1" } }),
     (error) => error instanceof UsageError && error.code === "NO_TOKEN"
   );
 });

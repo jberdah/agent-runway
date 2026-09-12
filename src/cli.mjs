@@ -15,7 +15,7 @@ Usage:
 
 Commands:
   setup        Guided first-time setup: create a token, check it, save it.
-               --env    also export CLAUDE_USAGE_TOKEN from your shell profile
+               --env    also export AGENT_RUNWAY_TOKEN from your shell profile
                --force  replace a token that already works
 
 Options:
@@ -27,12 +27,12 @@ Options:
 
 Authentication, first match wins:
   CLAUDE_CODE_OAUTH_TOKEN     token from \`claude setup-token\` (recommended)
-  CLAUDE_USAGE_TOKEN
+  AGENT_RUNWAY_TOKEN
   ANTHROPIC_AUTH_TOKEN
   ~/.claude/usage-token       file containing the token on a single line
   ~/.claude/.credentials.json Claude Code's own session token, often stale
 
-  Set CLAUDE_USAGE_NO_LOCAL_CREDENTIALS=1 to never read the last source.
+  Set AGENT_RUNWAY_NO_LOCAL_CREDENTIALS=1 to never read the last source.
 
 Exit codes:
   0 success   1 error   2 no token   3 auth rejected   4 endpoint rate limited

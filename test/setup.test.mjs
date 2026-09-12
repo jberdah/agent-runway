@@ -38,12 +38,12 @@ test("shellProfilePath returns null rather than guessing", () => {
 
 test("envExportLine references the token file, never a literal secret", () => {
   const posix = envExportLine("/home/u/.zshrc");
-  assert.match(posix, /export CLAUDE_USAGE_TOKEN=/);
+  assert.match(posix, /export AGENT_RUNWAY_TOKEN=/);
   assert.match(posix, /cat \$HOME\/\.claude\/usage-token/);
   assert.ok(!posix.includes("sk-ant-"), "the export line must not embed a token");
 
   const fish = envExportLine("/home/u/.config/fish/config.fish");
-  assert.match(fish, /set -gx CLAUDE_USAGE_TOKEN/);
+  assert.match(fish, /set -gx AGENT_RUNWAY_TOKEN/);
   assert.match(fish, /cat \$HOME\/\.claude\/usage-token/);
 });
 

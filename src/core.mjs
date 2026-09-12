@@ -47,14 +47,14 @@ function readTokenFile(file) {
  * convenience so the tool works with no setup, but it is not a stable contract:
  * on macOS the live token lives in the Keychain and on Windows in the Credential
  * Manager, so the file is frequently absent or stale. Set
- * CLAUDE_USAGE_NO_LOCAL_CREDENTIALS=1 to skip it entirely.
+ * AGENT_RUNWAY_NO_LOCAL_CREDENTIALS=1 to skip it entirely.
  *
  * @returns {{token: string, source: string, expiredAt: string|null}|null}
  */
 export function resolveToken(env = process.env) {
   const fromEnv = [
     ["CLAUDE_CODE_OAUTH_TOKEN", "env CLAUDE_CODE_OAUTH_TOKEN"],
-    ["CLAUDE_USAGE_TOKEN", "env CLAUDE_USAGE_TOKEN"],
+    ["AGENT_RUNWAY_TOKEN", "env AGENT_RUNWAY_TOKEN"],
     ["ANTHROPIC_AUTH_TOKEN", "env ANTHROPIC_AUTH_TOKEN"],
   ];
   for (const [name, source] of fromEnv) {
@@ -64,7 +64,7 @@ export function resolveToken(env = process.env) {
   const fileToken = readTokenFile(path.join(claudeDir(), "usage-token"));
   if (fileToken) return { token: fileToken, source: "~/.claude/usage-token", expiredAt: null };
 
-  if (env.CLAUDE_USAGE_NO_LOCAL_CREDENTIALS === "1") return null;
+  if (env.AGENT_RUNWAY_NO_LOCAL_CREDENTIALS === "1") return null;
 
   const oauth = readCredentialsFile()?.claudeAiOauth;
   if (oauth?.accessToken) {

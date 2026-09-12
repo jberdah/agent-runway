@@ -49,7 +49,7 @@ work ahead and say so plainly.
 The tool resolves a token in this order:
 
 1. `CLAUDE_CODE_OAUTH_TOKEN` — from `claude setup-token`, the recommended source
-2. `CLAUDE_USAGE_TOKEN`
+2. `AGENT_RUNWAY_TOKEN`
 3. `ANTHROPIC_AUTH_TOKEN`
 4. `~/.claude/usage-token` — a file holding the token on one line
 5. `~/.claude/.credentials.json` — Claude Code's own session token, frequently

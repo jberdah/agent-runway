@@ -127,7 +127,7 @@ your shell, and is revoked by deleting it.
 it appends an indirection rather than a second copy of the secret:
 
 ```sh
-export CLAUDE_USAGE_TOKEN="$(cat $HOME/.claude/usage-token 2>/dev/null)"
+export AGENT_RUNWAY_TOKEN="$(cat $HOME/.claude/usage-token 2>/dev/null)"
 ```
 
 On Windows it sets a user-level variable, passing the value through stdin so the
@@ -141,7 +141,7 @@ Sources are tried in this order, first match wins:
 | Source | Notes |
 | --- | --- |
 | `CLAUDE_CODE_OAUTH_TOKEN` | from `claude setup-token`, recommended |
-| `CLAUDE_USAGE_TOKEN` | if you want a variable scoped to this tool |
+| `AGENT_RUNWAY_TOKEN` | if you want a variable scoped to this tool |
 | `ANTHROPIC_AUTH_TOKEN` | already set in many setups |
 | `~/.claude/usage-token` | a file holding the token on one line |
 | `~/.claude/.credentials.json` | Claude Code's own session token |
@@ -149,7 +149,7 @@ Sources are tried in this order, first match wins:
 The last one makes the tool work with no setup at all, but it is a convenience
 rather than a contract: on macOS the live token lives in the Keychain and on
 Windows in the Credential Manager, so that file is often absent or stale. Set
-`CLAUDE_USAGE_NO_LOCAL_CREDENTIALS=1` to skip it entirely.
+`AGENT_RUNWAY_NO_LOCAL_CREDENTIALS=1` to skip it entirely.
 
 `CLAUDE_ORG_ID` overrides the organization UUID, which is only needed by the
 claude.ai fallback endpoint.
