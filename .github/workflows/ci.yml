@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+# Least-privilege: CI only reads the repository. Publishing lives in
+# release.yml, which grants its own scopes explicitly.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS earns a slot here that it would not in most projects: this tool
+        # reads install layouts that differ per platform, and every macOS path
+        # in it is unverified. The suite injects platform and home so those
+        # branches are exercised, but only a real macOS runner proves the
+        # assumptions about process spawning and file modes.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        # 22 is Active LTS, 24 is current. Linux covers both; the other two
+        # platforms run the newer one, which keeps the matrix at four jobs.
+        node: [22, 24]
+        exclude:
+          - os: windows-latest
+            node: 22
+          - os: macos-latest
+            node: 22
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Syntax check every module
+        # The runtime has no dependencies and no build step, so a parse error
+        # would otherwise only surface when a user runs the command.
+        shell: bash
+        run: |
+          for f in src/*.mjs src/providers/*.mjs scripts/*.mjs; do
+            node --check "$f"
+          done
+
+      - name: Test
+        run: npm test
+
+      - name: Check what would be published
+        run: npm run pack:check
+
+  no-runtime-dependencies:
+    name: Runtime stays dependency-free
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # A Claude Code plugin installed from git is never npm-installed, so an
+      # imported dependency would silently break it for every plugin user.
+      # Asserting it here stops one being added by accident.
+      - name: package.json declares no dependencies
+        run: |
+          count=$(node -p "Object.keys(require('./package.json').dependencies ?? {}).length")
+          if [ "$count" != "0" ]; then
+            echo "::error::The runtime must stay dependency-free; found $count."
+            exit 1
+          fi
+
+      - name: The CLI and MCP server run without node_modules
+        run: |
+          node src/cli.mjs --help > /dev/null
+          printf '%s\n' \
+            '{"id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"id":2,"method":"tools/list"}' \
+            | node src/mcp.mjs | grep -q '"tools"'

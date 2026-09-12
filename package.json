@@ -34,7 +34,9 @@
     "test": "node --test \"test/**/*.test.mjs\"",
     "start": "node src/cli.mjs",
     "mcp": "node src/mcp.mjs",
-    "smoke": "node scripts/smoke-mcp.mjs"
+    "smoke": "node scripts/smoke-mcp.mjs",
+    "prepublishOnly": "npm test",
+    "pack:check": "npm pack --dry-run"
   },
   "keywords": [
     "claude",
