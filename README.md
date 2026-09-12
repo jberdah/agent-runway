@@ -210,13 +210,75 @@ Windows in the Credential Manager, so that file is often absent or stale. Set
 `CLAUDE_ORG_ID` overrides the organization UUID, which is only needed by the
 claude.ai fallback endpoint.
 
+## Two questions, one tool
+
+Before delegating work, an agent needs both halves of the answer, and getting
+them from two different tools defeats the point:
+
+**How much runway is left, per provider.**
+
+```bash
+agent-runway --all
+```
+
+```
+Claude              Session (5h)   4 %   |  Weekly - all models  87 %
+OpenAI Codex plus   Session        0 %   |  Weekly                0 %
+GitHub Copilot      Chat  200/200 requests | Premium: not included in this plan
+Antigravity Pro     Flow credits 100 %
+```
+
+**Which models each install will actually accept.**
+
+```bash
+agent-runway --models
+```
+
+```
+codex path      0.149.1              4 models  [declared]
+    gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5
+codex vscode    0.154.0-alpha.6.1    5 models  [declared]
+    gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5
+
+Disagreements between installs of the same agent:
+  codex path 0.149.1 does not offer: gpt-6-astra
+```
+
+That last line is the point. A machine carries several builds of the same agent
+— five of Claude here — and they do not agree. `gpt-6-astra` is what this
+machine's `config.toml` selects: it runs under the editor extension and does not
+exist for the CLI a delegation would spawn.
+
+Each catalogue says how it was obtained. **declared** means the binary was asked
+and answered, through `codex app-server`'s `model/list` or the Copilot CLI's own
+shell completion. **inferred** means identifiers were read out of the binary,
+which Claude Code requires because it exposes no list: strong evidence, not a
+contract, and occasionally plausible-looking rubbish.
+
+## Deciding, rather than reporting
+
+```bash
+agent-runway --gate 90
+```
+
+Prints JSON and answers in the exit code: **0** proceed, **10** defer, **11**
+unknown. Three outcomes rather than two, because a provider that could not be
+read has not got room — it is simply unknown, and must never be counted as
+either.
+
+The recommendation states its own rule and whether the candidates were even
+comparable: 0% of a five-hour window is not 0% of a monthly allowance.
+
 ## CLI reference
 
 | Flag | Output |
 | --- | --- |
-| *(none)* | Readable table |
+| *(none)* | Claude only, readable table |
+| `--all` | Every provider found on this machine |
+| `--models` | What each install accepts, and where installs disagree |
+| `--gate <N>` | Decision as JSON plus an exit code |
 | `--short` | One line: `session=15%  weekly_all=79%  weekly_scoped=52%` |
-| `--json` | Raw API response |
+| `--json` | Raw response; combines with `--models` |
 | `--plain` | Table without the header |
 
 | Exit code | Meaning |

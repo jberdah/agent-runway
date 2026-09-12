@@ -117,6 +117,36 @@ export function renderProviders(results) {
   return lines.join("\n").trimEnd();
 }
 
+/**
+ * What each install will accept as a model, and where they disagree.
+ *
+ * The disagreement is the point: a slug offered by the build behind an editor
+ * and missing from the one on PATH is a delegation that fails.
+ */
+export function renderModels(catalogues, skews = []) {
+  const lines = [];
+  for (const c of catalogues) {
+    const head = `${c.agent} ${c.kind}`.padEnd(18) + (c.version ?? "?").padEnd(20);
+    if (c.error) {
+      lines.push(`${head}unreadable - ${c.error}`);
+      continue;
+    }
+    // "declared" means the binary answered; "inferred" means we read strings
+    // out of it, which can produce plausible-looking rubbish.
+    lines.push(`${head}${String(c.models.length).padStart(2)} models  [${c.authority}]`);
+    lines.push(`    ${c.models.map((m) => m.id).join(", ")}`);
+  }
+
+  if (skews.length) {
+    lines.push("");
+    lines.push("Disagreements between installs of the same agent:");
+    for (const s of skews) {
+      lines.push(`  ${s.agent} ${s.install.kind} ${s.install.version ?? ""} does not offer: ${s.missing.join(", ")}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 /** Single line, for an agent checking headroom before a long task. */
 export function renderShort(usage) {
   if (!usage.windows.length) return "no usage data";

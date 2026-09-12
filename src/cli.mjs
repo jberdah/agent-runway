@@ -2,12 +2,12 @@
 // Command line entry point. Also what the Claude Code skill shells out to.
 
 import { fetchUsage, UsageError, VERSION } from "./core.mjs";
-import { renderProviders, renderShort, renderTable } from "./render.mjs";
+import { renderModels, renderProviders, renderShort, renderTable } from "./render.mjs";
 
 const HELP = `agent-runway ${VERSION}
 
-Show how much runway is left before you hit a rate limit.
-Reads Claude today; Codex and Copilot are next.
+Show how much runway is left before you hit a rate limit, and which models
+each installed agent will actually accept.
 
 Usage:
   agent-runway [options]
@@ -20,6 +20,8 @@ Commands:
 
 Options:
   --all           Every provider found on this machine, not just Claude
+  --models        What each installed agent will accept as a model, and
+                  where two installs of the same agent disagree
   --gate <N>      Decide: is there room to start work, at threshold N percent?
                   Prints JSON. Exit 0 proceed, 10 defer, 11 unknown.
   --short         One line, machine friendly: session=79%  weekly_all=76%
@@ -68,6 +70,25 @@ async function main(argv) {
   if (argv[0] === "setup") {
     const { setup } = await import("./setup.mjs");
     return setup(argv.slice(1));
+  }
+
+  // What each install will accept as a model. A separate question from quota,
+  // and the one that decides whether a delegation's -m argument is valid.
+  if (has("--models")) {
+    const [{ discoverInstalls }, models] = await Promise.all([
+      import("./installs.mjs"),
+      import("./models.mjs"),
+    ]);
+    const installs = discoverInstalls({ withVersions: true })
+      .filter((i) => models.SPAWNABLE.includes(i.agent));
+    const catalogues = await models.modelsForAll(installs);
+
+    if (has("--json")) {
+      process.stdout.write(`${JSON.stringify({ catalogues, skew: models.modelSkew(catalogues) }, null, 2)}\n`);
+      return 0;
+    }
+    process.stdout.write(`\n${renderModels(catalogues, models.modelSkew(catalogues))}\n`);
+    return 0;
   }
 
   // Multi-provider paths go through the registry, which isolates failures:
