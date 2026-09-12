@@ -1,7 +1,7 @@
 {
   "name": "agent-runway",
-  "version": "0.1.0",
-  "description": "How much runway is left before your coding agent hits its rate limits - from the terminal, from Claude Code, or as an MCP tool.",
+  "version": "0.2.0",
+  "description": "Quota and model discovery for the coding agents installed on this machine: how much runway each has left, and which model slugs each binary will actually accept.",
   "type": "module",
   "license": "MIT",
   "author": "jberdah (https://github.com/jberdah)",

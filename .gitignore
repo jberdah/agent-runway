@@ -6,3 +6,4 @@ package-lock.json
 # Never commit a token. The tool reads this path if it exists.
 usage-token
 .env
+experiment-window-start.log.jsonl

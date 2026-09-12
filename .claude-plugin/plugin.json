@@ -1,8 +1,8 @@
 {
   "name": "agent-runway",
   "displayName": "Agent Runway",
-  "version": "0.1.0",
-  "description": "How much runway is left before you hit a rate limit: which windows are consumed and when each resets. Claude today, Codex and Copilot next.",
+  "version": "0.2.0",
+  "description": "Quota and model discovery for the coding agents installed on this machine: how much runway each has left, and which model slugs each binary will actually accept.",
   "author": {
     "name": "jberdah",
     "url": "https://github.com/jberdah"

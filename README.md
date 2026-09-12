@@ -9,8 +9,9 @@ any client can call, so the reasoning happens once instead of in every model.
 > **Unofficial.** This reads undocumented Anthropic endpoints. It can stop
 > working without notice and is not a compatibility contract with anyone.
 
-**Claude works today. Codex and GitHub Copilot are next** — the provider
-adapters are the next piece of work, not a promise already delivered.
+Covers **Claude, Codex, GitHub Copilot, Gemini CLI and Antigravity**, each read
+with the credentials that agent already keeps. One provider failing never costs
+the others their answer.
 
 *Part of the [brainclaw](https://brainclaw.dev) toolkit.*
 
@@ -28,7 +29,7 @@ Runway - Claude
 
   Extra usage credits: disabled
 
-  * = window currently being counted against
+  * = closest to its limit, as the API flags it
 ```
 
 ## Why
@@ -54,11 +55,14 @@ git clone https://github.com/jberdah/agent-runway && cd agent-runway
 node src/cli.mjs setup
 ```
 
-`setup` is one guided pass, identical on Windows, macOS and Linux. It checks
-whether a token already works, runs `claude setup-token` for you if you want it
-to (you complete the browser sign-in), reads the token back without echoing it,
-**validates it against the API before saving anything**, then writes it to
-`~/.claude/usage-token` with mode 0600 and prints your current usage.
+`setup` is one guided pass, identical on Windows, macOS and Linux. It reads a
+token back without echoing it, **validates it against the API before saving
+anything**, then writes it to `~/.claude/usage-token` with mode 0600 and prints
+your current usage. `setup --stdin` takes the token from a pipe instead, so it
+never has to be displayed or pasted.
+
+Most of the tool needs no credential at all: `--models` and `resolve` read local
+binaries. Only quota requires signing in.
 
 Re-running it is safe: it reports that things already work and changes nothing
 unless you pass `--force`.
@@ -196,7 +200,7 @@ Sources are tried in this order, first match wins:
 
 | Source | Notes |
 | --- | --- |
-| `CLAUDE_CODE_OAUTH_TOKEN` | from `claude setup-token`, recommended |
+| `CLAUDE_CODE_OAUTH_TOKEN` | a token carrying `user:profile` — note that `claude setup-token` does not mint one |
 | `AGENT_RUNWAY_TOKEN` | if you want a variable scoped to this tool |
 | `ANTHROPIC_AUTH_TOKEN` | already set in many setups |
 | `~/.claude/usage-token` | a file holding the token on one line |
@@ -255,6 +259,36 @@ shell completion. **inferred** means identifiers were read out of the binary,
 which Claude Code requires because it exposes no list: strong evidence, not a
 contract, and occasionally plausible-looking rubbish.
 
+## Before spawning another agent
+
+One call returns everything needed to build a command that works:
+
+```bash
+agent-runway resolve codex --model gpt-6-astra
+```
+
+```jsonc
+{
+  "contract": 1,
+  "binary": "…/OpenAI/Codex/bin/codex.exe",
+  "version": "0.149.1",
+  "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"],
+  "model": {
+    "requested": "gpt-6-astra",
+    "valid": false,
+    "availableIn": [{ "kind": "vscode", "version": "0.154.0-alpha.6.1", "path": "…" }],
+    "suggestion": "gpt-5.6-sol"
+  }
+}
+```
+
+Exit 1 when the agent cannot be resolved or the slug is refused, so a script can
+branch. The substitute is **offered, never applied**: running a different model
+than was asked for, silently, is worse than failing.
+
+This is meant to compose with tools that already know how to build command
+lines. It deliberately does not spawn anything.
+
 ## Deciding, rather than reporting
 
 ```bash
@@ -276,6 +310,7 @@ comparable: 0% of a five-hour window is not 0% of a monthly allowance.
 | *(none)* | Claude only, readable table |
 | `--all` | Every provider found on this machine |
 | `--models` | What each install accepts, and where installs disagree |
+| `resolve <agent>` | Binary, valid slugs and a verdict on one model |
 | `--gate <N>` | Decision as JSON plus an exit code |
 | `--short` | One line: `session=15%  weekly_all=79%  weekly_scoped=52%` |
 | `--json` | Raw response; combines with `--models` |
