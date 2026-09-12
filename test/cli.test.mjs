@@ -178,6 +178,9 @@ test("the envelope survives on every kind, whatever the payload holds", () => {
     assert.equal(answer.kind, kind);
     assert.equal(answer.tool, "agent-runway", `${kind} lost the envelope's tool field`);
     assert.equal(typeof answer.toolVersion, "string", `${kind} lost toolVersion`);
+    // The contract's own version, which is what a parser should gate on:
+    // toolVersion moves whenever the code does, and says nothing about shape.
+    assert.equal(answer.schemaVersion, 1, `${kind} lost schemaVersion`);
   }
 });
 

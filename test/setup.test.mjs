@@ -106,3 +106,31 @@ test("persistToken creates the .claude directory when missing", () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+// ------------------------------------------------- a token and a cookie differ
+
+test("a credential is stored in the file the resolver will actually read", async () => {
+  const { credentialKind, persistCredential } = await import("../src/setup.mjs");
+
+  // The two authenticate different endpoints and are not interchangeable:
+  // claude.ai refuses a Bearer outright. Saving a cookie into the token file
+  // produces a credential nothing ever tries, and a setup that reports success
+  // while changing nothing.
+  assert.equal(credentialKind("sk-ant-sid01-abcdefghijklmnop"), "cookie");
+  assert.equal(credentialKind("sk-ant-oat01-abcdefghijklmnop"), "token");
+  assert.equal(credentialKind("sk-ant-somethingnew-xyz"), "token", "an unknown prefix is a token");
+  assert.equal(credentialKind(null), "token", "never throws on junk");
+
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runway-cred-"));
+  try {
+    const cookieFile = persistCredential("sk-ant-sid01-abcdefghijklmnop", home);
+    const tokenFile = persistCredential("sk-ant-oat01-abcdefghijklmnop", home);
+
+    assert.equal(path.basename(cookieFile), "session-cookie");
+    assert.equal(path.basename(tokenFile), "usage-token");
+    assert.match(fs.readFileSync(cookieFile, "utf8"), /^sk-ant-sid01-/);
+    assert.match(fs.readFileSync(tokenFile, "utf8"), /^sk-ant-oat01-/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

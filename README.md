@@ -55,11 +55,17 @@ git clone https://github.com/jberdah/agent-runway && cd agent-runway
 node src/cli.mjs setup
 ```
 
-`setup` is one guided pass, identical on Windows, macOS and Linux. It reads a
-token back without echoing it, **validates it against the API before saving
-anything**, then writes it to `~/.claude/usage-token` with mode 0600 and prints
-your current usage. `setup --stdin` takes the token from a pipe instead, so it
-never has to be displayed or pasted.
+`setup` is one guided pass, identical on Windows, macOS and Linux. It checks
+whether anything already works, explains the two credentials that can, reads one
+back without echoing it, **validates it against the API before saving
+anything**, and writes it to the file that credential is read from — a token to
+`~/.claude/usage-token`, a claude.ai cookie to `~/.claude/session-cookie`, both
+mode 0600. `setup --stdin` takes it from a pipe instead, so it never has to be
+displayed or pasted.
+
+**It cannot mint a credential**, and says so rather than pretending: no command
+issues a usage-scoped token for Claude today. What setup does is detect, explain
+and verify.
 
 Most of the tool needs no credential at all: `--models` and `resolve` read local
 binaries. Only quota requires signing in.
@@ -137,10 +143,10 @@ Cloning is enough to run it — `node src/cli.mjs` needs nothing installed.
 `agent-runway setup` handles this. What follows is what it does, for anyone who
 would rather do it by hand or automate it.
 
-### Claude has no durable credential today
+### Claude's credential problem, and the way around it
 
-This is the project's sharpest limitation, and it was found by trying rather
-than by reading docs.
+The sharpest limitation in this project, found by trying rather than by reading
+docs — and it has exactly one answer, further down.
 
 `claude setup-token` mints a long-lived token, and it does **not** work here:
 
@@ -155,16 +161,19 @@ every time. There is no flag to ask for a wider scope.
 What does carry `user:profile` is the session credential Claude Code keeps for
 itself, and that is refreshed only while Claude Code is running. So:
 
-| Situation | Claude usage readable |
-| --- | --- |
-| Claude Code in active use | yes |
-| Claude Code idle for hours, or signed out | no |
-| A scheduled job on an otherwise quiet machine | no |
+| Situation | With a token alone | With a session cookie |
+| --- | --- | --- |
+| Claude Code in active use | yes | yes |
+| Claude Code idle for hours, or signed out | no | **yes** |
+| A scheduled job on an otherwise quiet machine | no | **yes** |
 
-In practice this bites less than it sounds: an agent checking its own runway
-mid-task is running inside Claude Code, so the credential is fresh exactly when
-it is needed. What it does rule out is the unattended case — waking up at a
-reset to see whether the quota came back.
+In practice the token column bites less than it sounds: an agent checking its
+own runway mid-task is running inside Claude Code, so the credential is fresh
+exactly when it is needed. What it rules out is the unattended case — waking at
+a reset to see whether the quota came back — and that is what the cookie is for.
+
+Either credential is enough on its own. Neither is required when the other is
+present, and the answer reports which one actually worked.
 
 **Codex, Copilot and Antigravity are unaffected.** Each has a durable credential
 of its own, which is part of why this tool covers more than one provider.
@@ -413,8 +422,27 @@ A `proceed` resting on three providers out of four says so.
 entire output is a decision, a guessed threshold answers a question nobody
 asked.
 
-The recommendation likewise states its own rule and whether the candidates were
-even comparable: 0% of a five-hour window is not 0% of a monthly allowance.
+### No recommendation it cannot justify
+
+0% of a five-hour window is not 0% of a monthly allowance, so when the providers
+under the threshold have different cadences, `recommended` is **null**. It used
+to name one anyway with `comparable: false` beside it — but a field called
+`recommended` gets acted on while a caveat next to it gets skimmed past.
+
+The material is still there. `candidates` carries one entry per cadence class,
+each the least consumed of its class, so a caller that knows which window its own
+work will burn can choose:
+
+```json
+"recommended": null,
+"candidates": [
+  { "provider": "codex",   "percentUsed": 0, "window": "Session", "windowSeconds": 18000 },
+  { "provider": "copilot", "percentUsed": 5, "window": "Chat requests", "windowSeconds": null }
+]
+```
+
+When the candidates do share a cadence, `recommended` is filled in and states
+the rule it applied.
 
 ## CLI reference
 
@@ -436,12 +464,24 @@ even comparable: 0% of a five-hour window is not 0% of a monthly allowance.
 Everything printed under `--json` declares which question it answers, so a
 parser never has to know what was asked to read the answer:
 
+```json
+{ "tool": "agent-runway", "toolVersion": "0.3.0", "schemaVersion": 1, "kind": "capacity" }
+```
+
 | `kind` | Produced by |
 | --- | --- |
 | `usage` | *(none)*, `--all` |
 | `capacity` | `--gate` |
 | `models` | `--models` |
 | `resolve` | `resolve <agent>` |
+| `doctor` | `doctor` |
+
+**Gate on `schemaVersion`, not `toolVersion`.** They answer different questions:
+`toolVersion` moves whenever the code does and says nothing about shape, while
+`schemaVersion` changes only when a field is removed or changes meaning. A
+parser written against schema 1 should keep working across 0.9 and 2.0. The same
+envelope travels on MCP structured content, so an agent and a script see one
+object rather than two.
 
 | Exit code | Meaning |
 | --- | --- |
@@ -464,11 +504,18 @@ parser never has to know what was asked to read the answer:
 
 ## How it works
 
-Two internal endpoints, tried in order, both authenticated with
-`Authorization: Bearer sk-ant-oat01-...` and `anthropic-beta: oauth-2025-04-20`:
+Two internal endpoints, each taking a **different** credential, and each offered
+only when that credential exists:
 
-1. `https://api.anthropic.com/api/oauth/usage`
-2. `https://claude.ai/api/organizations/{org}/usage`
+| Endpoint | Authenticated with |
+| --- | --- |
+| `api.anthropic.com/api/oauth/usage` | `Authorization: Bearer` + `anthropic-beta: oauth-2025-04-20` |
+| `claude.ai/api/organizations/{org}/usage` | `Cookie: sessionKey=…` — it refuses any Bearer |
+
+Either one alone is enough. Sending a Bearer to claude.ai is not a fallback,
+it is a guaranteed 403, so that request is never made without a cookie to
+authenticate it. The answer reports `credentialSource`: which credential
+actually worked, not which was resolved first.
 
 **These endpoints are internal and undocumented. They can change or disappear
 without notice.** Parsing is written to degrade rather than break: it prefers

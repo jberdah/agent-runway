@@ -22,6 +22,7 @@ const IS_WINDOWS = process.platform === "win32";
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const tokenPath = (home = os.homedir()) => path.join(home, ".claude", "usage-token");
+const cookiePath = (home = os.homedir()) => path.join(home, ".claude", "session-cookie");
 const out = (line = "") => process.stdout.write(line + "\n");
 
 // Key handling compares byte values rather than character literals: control
@@ -183,29 +184,61 @@ function askSecret(question) {
 // users into a 403 they could not fix by trying again.
 
 /** Ask the API whether the token actually works. Shape checks are not enough. */
-async function validateToken(token) {
+async function validateToken(secret) {
   try {
-    const usage = await fetchUsage({
-      env: { AGENT_RUNWAY_TOKEN: token, AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1" },
-    });
+    // Checked in isolation: only the endpoint this credential can authenticate
+    // is offered, so "accepted" means this secret works, not that something
+    // else on the machine did.
+    const env =
+      credentialKind(secret) === "cookie"
+        ? { AGENT_RUNWAY_CLAUDE_COOKIE: secret, AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1" }
+        : { AGENT_RUNWAY_TOKEN: secret, AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1" };
+    const usage = await fetchUsage({ env });
     return { ok: true, usage };
   } catch (error) {
     return { ok: false, error };
   }
 }
 
-export function persistToken(token, home = os.homedir()) {
-  const file = tokenPath(home);
+/**
+ * Which credential a pasted secret is.
+ *
+ * The two are not interchangeable. A token authenticates api.anthropic.com with
+ * a Bearer; a sessionKey cookie authenticates claude.ai, which refuses Bearers
+ * outright. Saving one into the other's file produces a credential that is
+ * never tried, and a setup that reports success while changing nothing.
+ */
+export function credentialKind(secret) {
+  // `sk-ant-sid…` is the claude.ai session key; everything else is treated as a
+  // token, which is the safe default — a token is checked against the endpoint
+  // that takes one, and a wrong guess fails loudly instead of being stored
+  // somewhere nothing reads.
+  return String(secret ?? "").trim().startsWith("sk-ant-sid") ? "cookie" : "token";
+}
+
+function writeSecret(file, secret) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   // mode is honoured on POSIX and ignored on Windows, where the user profile
   // directory is already ACL-restricted to the account.
-  fs.writeFileSync(file, token + "\n", { encoding: "utf8", mode: 0o600 });
+  fs.writeFileSync(file, secret + "\n", { encoding: "utf8", mode: 0o600 });
   try {
     fs.chmodSync(file, 0o600);
   } catch {
     /* Windows: no-op */
   }
   return file;
+}
+
+export function persistToken(token, home = os.homedir()) {
+  return writeSecret(tokenPath(home), token);
+}
+
+/** Save a token or a cookie, each to the file the resolver actually reads. */
+export function persistCredential(secret, home = os.homedir()) {
+  return writeSecret(
+    credentialKind(secret) === "cookie" ? cookiePath(home) : tokenPath(home),
+    secret
+  );
 }
 
 /** Windows: pass the value on stdin so it never appears in a process list. */
@@ -297,17 +330,17 @@ export async function setup(argv = []) {
   if (!force) {
     try {
       const usage = await fetchUsage();
-      out(`Already working (token from ${usage.tokenSource}).`);
+      out(`Already working (credential from ${usage.credentialSource}).`);
       out("");
       out(renderTable(usage));
       out("");
-      out("Re-run with --force to replace the token.");
+      out("Re-run with --force to replace it.");
       return 0;
     } catch (error) {
       if (!(error instanceof UsageError) || !["NO_TOKEN", "AUTH"].includes(error.code)) throw error;
       out(error.code === "AUTH"
-        ? "A token was found but the API rejected it. Let's replace it."
-        : "No token found yet. Let's create one.");
+        ? "A credential was found but the API rejected it. Let's replace it."
+        : "No credential found yet. Let's find one.");
     }
   }
 
@@ -325,7 +358,7 @@ export async function setup(argv = []) {
     const found = piped.match(/sk-ant-\S{16,}/)?.[0] ?? null;
 
     if (!found) {
-      out("No token found on stdin. Expected something containing sk-ant-...");
+      out("No credential found on stdin. Expected something containing sk-ant-...");
       return 1;
     }
     out(`Read a ${found.length}-character token from stdin. Checking it...`);
@@ -339,7 +372,7 @@ export async function setup(argv = []) {
     }
 
     out("  Accepted.");
-    out(`  Saved to ${persistToken(found)}${IS_WINDOWS ? "" : " (mode 0600)"}.`);
+    out(`  Saved to ${persistCredential(found)}${IS_WINDOWS ? "" : " (mode 0600)"}.`);
     out("");
     out(renderTable(checked.usage));
     return 0;
@@ -353,9 +386,12 @@ export async function setup(argv = []) {
     out("Setup is interactive and there is no terminal attached.");
     out("Run it from a terminal, or provide a token another way:");
     out("");
-    out("  claude setup-token                       # then either");
-    out("  export AGENT_RUNWAY_TOKEN=sk-ant-...     # env var, good for CI");
+    out("  export AGENT_RUNWAY_TOKEN=sk-ant-...     # a token, good for CI");
     out(`  echo sk-ant-... > ${tokenPath()}   # or the token file`);
+    out(`  echo sk-ant-sid01-... > ${cookiePath()}  # or a claude.ai cookie`);
+    out("");
+    out("`claude setup-token` is not one of the options: the token it mints lacks");
+    out("the user:profile scope this endpoint requires.");
     return 1;
   }
 
@@ -364,15 +400,21 @@ export async function setup(argv = []) {
   out("inference scopes, and the usage endpoint requires user:profile, so it is");
   out("refused with a 403 no matter how many times it is regenerated.");
   out("");
-  out("Claude usage is readable today only through Claude Code's own session");
-  out("credentials, so the practical answer is to keep Claude Code signed in.");
+  out("Two credentials do work, and setup accepts either:");
   out("");
-  out("If you do hold a token carrying user:profile, paste it now; otherwise stop");
-  out("here with Ctrl-C and just sign in to Claude Code.");
+  out("  1. A token carrying user:profile. Claude Code keeps one for its own");
+  out("     session, refreshed only while it runs - so it goes stale when idle.");
+  out("  2. Your claude.ai sessionKey cookie. The claude.ai endpoint takes it");
+  out("     instead of a Bearer, and it keeps working while Claude Code is");
+  out("     closed. This is the durable path.");
+  out("");
+  out("Weigh the second before using it: a session cookie is the browser's whole");
+  out("account session, broader than a scoped token, and it cannot be narrowed.");
+  out("Paste either one now, or stop with Ctrl-C and sign in to Claude Code.");
 
   // 3. Take it, validate it, and only then store it.
   out("");
-  const token = await askSecret("Paste the token (input hidden): ");
+  const token = await askSecret("Paste a token or a claude.ai sessionKey (input hidden): ");
 
   if (!tokenLooksValid(token)) {
     out("");
@@ -400,7 +442,7 @@ export async function setup(argv = []) {
   }
   out("  Accepted.");
 
-  const file = persistToken(token);
+  const file = persistCredential(token);
   out(`  Saved to ${file}${IS_WINDOWS ? "" : " (mode 0600)"}.`);
 
   if (wantsEnv) await configureEnv(token);

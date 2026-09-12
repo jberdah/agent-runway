@@ -209,7 +209,7 @@ test("a provider's own limit flag outranks our reading of a percentage", () => {
   assert.equal(only.reason, "provider_says_limit_reached");
 });
 
-test("a recommendation across different cadences declares itself incomparable", () => {
+test("no recommendation is made across cadences that cannot be compared", () => {
   const decision = capacity(
     [
       reading("codex", [makeWindow({ kind: "session", percentUsed: 0, windowSeconds: 18000 })]),
@@ -217,10 +217,32 @@ test("a recommendation across different cadences declares itself incomparable", 
     ],
     { threshold: 90 }
   );
-  assert.equal(decision.recommended.provider, "codex");
-  // 0% of five hours is not 0% of a month, and the caller has to know that.
-  assert.equal(decision.recommended.comparable, false);
+
+  // 0% of five hours is not 0% of a month. This used to name codex and set
+  // comparable:false beside it, which is a caveat next to an answer - and a
+  // field called `recommended` gets acted on while the caveat gets skimmed.
+  assert.equal(decision.recommended, null);
+
+  // The material is still there, one per cadence, so a caller that knows what
+  // its own work will burn can choose.
+  assert.equal(decision.candidates.length, 2);
+  assert.deepEqual(decision.candidates.map((c) => c.provider).sort(), ["codex", "copilot"]);
+});
+
+test("a recommendation is made when the candidates really are comparable", () => {
+  const decision = capacity(
+    [
+      reading("codex", [makeWindow({ kind: "session", percentUsed: 40, windowSeconds: 18000 })]),
+      reading("claude", [makeWindow({ kind: "session", percentUsed: 8, windowSeconds: 18000 })]),
+    ],
+    { threshold: 90 }
+  );
+
+  assert.equal(decision.recommended.provider, "claude");
+  assert.equal(decision.recommended.comparable, true);
   assert.match(decision.recommended.rule, /least consumed/);
+  // One cadence, so one candidate: the best of that class.
+  assert.equal(decision.candidates.length, 1);
 });
 
 test("no usable provider yields no recommendation rather than a bad one", () => {

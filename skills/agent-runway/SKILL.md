@@ -80,6 +80,10 @@ rather than implying it is at zero or unknown-but-checkable.
 - A `proceed` can rest on fewer providers than you think. `overall.unreadable`
   names the ones that could not be read at all; mention them rather than
   presenting the answer as covering everything installed.
+- **`recommended: null` is an answer, not a gap.** It means the providers with
+  room run on different cadences and cannot be ranked against each other. Read
+  `candidates` — one per cadence — and pick by which window the work will
+  actually consume, saying which you chose and why.
 - `not included in this plan` means the account has no entitlement to that
   quota. It is not an exhausted quota, and must never be reported as one.
 - A provider may come back `unreachable` or `no_credentials`. That is

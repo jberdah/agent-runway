@@ -12,7 +12,7 @@
 
 import { createInterface } from "node:readline";
 
-import { VERSION } from "./core.mjs";
+import { SCHEMA_VERSION, VERSION } from "./core.mjs";
 
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
@@ -52,10 +52,11 @@ const TOOLS = [
       properties: {
         tool: { type: "string" },
         toolVersion: { type: "string" },
+        schemaVersion: { type: "number" },
         kind: { type: "string" },
         providers: { type: "array", items: LOOSE },
       },
-      required: ["tool", "toolVersion", "kind", "providers"],
+      required: ["tool", "toolVersion", "schemaVersion", "kind", "providers"],
       additionalProperties: true,
     },
   },
@@ -108,13 +109,14 @@ const TOOLS = [
       properties: {
         tool: { type: "string" },
         toolVersion: { type: "string" },
+        schemaVersion: { type: "number" },
         kind: { type: "string" },
         threshold: { type: "number" },
         overall: LOOSE,
         providers: { type: "array", items: LOOSE },
         anyUnknown: { type: "boolean" },
       },
-      required: ["tool", "toolVersion", "kind", "threshold", "overall", "providers", "anyUnknown"],
+      required: ["tool", "toolVersion", "schemaVersion", "kind", "threshold", "overall", "providers", "anyUnknown"],
       additionalProperties: true,
     },
   },
@@ -148,11 +150,12 @@ const TOOLS = [
       properties: {
         tool: { type: "string" },
         toolVersion: { type: "string" },
+        schemaVersion: { type: "number" },
         kind: { type: "string" },
         catalogues: { type: "array", items: LOOSE },
         skew: { type: "array", items: LOOSE },
       },
-      required: ["tool", "toolVersion", "kind", "catalogues", "skew"],
+      required: ["tool", "toolVersion", "schemaVersion", "kind", "catalogues", "skew"],
       additionalProperties: true,
     },
   },
@@ -176,13 +179,14 @@ const TOOLS = [
       properties: {
         tool: { type: "string" },
         toolVersion: { type: "string" },
+        schemaVersion: { type: "number" },
         kind: { type: "string" },
         runtime: LOOSE,
         claude: LOOSE,
         providers: { type: "array", items: LOOSE },
         cache: LOOSE,
       },
-      required: ["tool", "toolVersion", "kind", "runtime", "claude", "providers"],
+      required: ["tool", "toolVersion", "schemaVersion", "kind", "runtime", "claude", "providers"],
       additionalProperties: true,
     },
   },
@@ -200,7 +204,13 @@ const replyError = (id, code, message) => send({ jsonrpc: "2.0", id, error: { co
 // structuredContent and a script parsing stdout now see the same keys.
 const answer = (kind, text, structuredContent) => ({
   content: [{ type: "text", text }],
-  structuredContent: { tool: "agent-runway", toolVersion: VERSION, kind, ...structuredContent },
+  structuredContent: {
+    tool: "agent-runway",
+    toolVersion: VERSION,
+    schemaVersion: SCHEMA_VERSION,
+    kind,
+    ...structuredContent,
+  },
 });
 
 // ------------------------------------------------------------------ handlers

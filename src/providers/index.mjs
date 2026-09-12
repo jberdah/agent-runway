@@ -172,7 +172,25 @@ export function capacity(results, { threshold = 90, rule = "all" } = {}) {
     ? usable.reduce((best, p) => (p.binding.percentUsed < best.binding.percentUsed ? p : best))
     : null;
 
-  const cadences = new Set(usable.map((p) => p.binding.windowSeconds ?? "calendar"));
+  const cadenceKey = (p) => p.binding.windowSeconds ?? "calendar";
+  const comparable = new Set(usable.map(cadenceKey)).size <= 1;
+
+  const describe = (p) => ({
+    provider: p.provider,
+    percentUsed: p.binding.percentUsed,
+    window: p.binding.label,
+    windowSeconds: p.binding.windowSeconds,
+    secondsUntilReset: secondsUntilReset(p.binding),
+  });
+
+  // The best provider within each cadence class. Comparing across classes is
+  // what cannot be done honestly; comparing inside one is straightforward, and
+  // a caller that knows its own workload can pick from these.
+  const byCadence = new Map();
+  for (const p of usable) {
+    const best = byCadence.get(cadenceKey(p));
+    if (!best || p.binding.percentUsed < best.binding.percentUsed) byCadence.set(cadenceKey(p), p);
+  }
 
   const decision = overallDecision(providers, rule);
 
@@ -190,17 +208,23 @@ export function capacity(results, { threshold = 90, rule = "all" } = {}) {
       unreadable: providers.filter((p) => p.decision === "unknown").map((p) => p.provider),
     },
     providers,
-    recommended: recommended
-      ? {
-          provider: recommended.provider,
-          percentUsed: recommended.binding.percentUsed,
-          window: recommended.binding.label,
-          windowSeconds: recommended.binding.windowSeconds,
-          secondsUntilReset: secondsUntilReset(recommended.binding),
-          rule: "least consumed binding window among providers under the threshold",
-          comparable: cadences.size <= 1,
-        }
-      : null,
+    // Offered only when the candidates share a cadence. 0% of a five-hour
+    // window is not 0% of a monthly allowance, and a field named `recommended`
+    // gets acted on while a `comparable: false` sitting beside it gets skimmed
+    // past. Withholding the recommendation is the safer failure; the material
+    // it was built from stays in `candidates`.
+    recommended:
+      recommended && comparable
+        ? {
+            ...describe(recommended),
+            rule: "least consumed binding window among providers under the threshold",
+            comparable: true,
+          }
+        : null,
+    // One entry per cadence class, each the least consumed of its class. When
+    // `recommended` is null this is what a caller chooses from, knowing which
+    // window its own work will actually burn.
+    candidates: [...byCadence.values()].map(describe),
     anyUnknown: providers.some((p) => p.decision === "unknown"),
   };
 }

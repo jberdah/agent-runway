@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Command line entry point. Also what the Claude Code skill shells out to.
 
-import { fetchUsage, UsageError, VERSION } from "./core.mjs";
+import { fetchUsage, SCHEMA_VERSION, UsageError, VERSION } from "./core.mjs";
 import { renderModels, renderProviders, renderShort, renderTable } from "./render.mjs";
 
 const HELP = `agent-runway ${VERSION}
@@ -14,9 +14,11 @@ Usage:
   agent-runway setup [--env] [--force]
 
 Commands:
-  setup        Guided first-time setup: create a token, check it, save it.
+  setup        Guided first-time setup: find a credential, check it against
+               the API, save it. It cannot mint one - no command does, for
+               Claude - so it detects what exists and explains the options.
                --env    also export AGENT_RUNWAY_TOKEN from your shell profile
-               --force  replace a token that already works
+               --force  replace a credential that already works
   doctor       Why a provider is not answering: which credential source won,
                which endpoint replied, what each one said, cache ages. Prints
                no secret, so it is safe to paste into an issue.
@@ -33,8 +35,9 @@ Options:
   --any           With --gate, proceed when any one provider has room. This is
                   the fan-out question, and it is not the same as "can I go on".
   --short         One line, machine friendly: session=79%  weekly_all=76%
-  --json          Normalized JSON. Every shape carries tool/version/kind, so a
-                  parser can tell which question it is looking at the answer to.
+  --json          Normalized JSON. Every answer carries tool, toolVersion,
+                  schemaVersion and kind, so a parser can tell what it is
+                  holding and whether it can still read it.
   --raw           The provider's own payload, unwrapped. Not a stable contract.
   --plain         Skip the header, print only the windows
   -h, --help      Show this help
@@ -43,17 +46,32 @@ Options:
 Providers: claude, codex, copilot, antigravity. Each is read with the
 credentials that provider already keeps, and one failing never stops the rest.
 
-Authentication, first match wins:
-  CLAUDE_CODE_OAUTH_TOKEN     token from \`claude setup-token\` (recommended)
-  AGENT_RUNWAY_TOKEN
-  ANTHROPIC_AUTH_TOKEN
-  ~/.claude/usage-token       file containing the token on a single line
-  ~/.claude/.credentials.json Claude Code's own session token, often stale
+Authentication. Two credentials can read Claude usage, and \`claude setup-token\`
+mints neither - its token lacks the user:profile scope the endpoint requires.
+
+  A token, for api.anthropic.com (first match wins):
+    CLAUDE_CODE_OAUTH_TOKEN     a token carrying user:profile
+    AGENT_RUNWAY_TOKEN          the same, scoped to this tool
+    ANTHROPIC_AUTH_TOKEN
+    ~/.claude/usage-token       a file holding the token on a single line
+    ~/.claude/.credentials.json Claude Code's own session token, often stale
+
+  A cookie, for claude.ai (which refuses any Bearer):
+    AGENT_RUNWAY_CLAUDE_COOKIE  the claude.ai sessionKey value
+    ~/.claude/session-cookie    the durable path: it keeps working while
+                                Claude Code is closed. Needs an org id too,
+                                which is read from Claude Code's credentials
+                                or set with CLAUDE_ORG_ID.
+
+  Either one alone is enough. \`agent-runway doctor\` shows what was found.
 
   Set AGENT_RUNWAY_NO_LOCAL_CREDENTIALS=1 to never read the last source.
 
 Exit codes:
-  0 success   1 error   2 no token   3 auth rejected   4 endpoint rate limited
+  0 success, or a gate that says proceed    3 credential rejected
+  1 error, or an unusable argument          4 endpoint rate limited (not you)
+  2 no credential found                    10 gate: defer
+                                           11 gate: unknown
 `;
 
 const EXIT = { NO_TOKEN: 2, AUTH: 3, RATE_LIMITED: 4 };
@@ -79,7 +97,11 @@ const GATE_EXIT = { proceed: 0, defer: 10, unknown: 11 };
  * silently replace "Codex 0.149.1" with the version of this tool.
  */
 const emit = (kind, payload) =>
-  `${JSON.stringify({ tool: "agent-runway", toolVersion: VERSION, kind, ...payload }, null, 2)}\n`;
+  `${JSON.stringify(
+    { tool: "agent-runway", toolVersion: VERSION, schemaVersion: SCHEMA_VERSION, kind, ...payload },
+    null,
+    2
+  )}\n`;
 
 /** `--name value` or `--name=value`; null when absent. */
 function flagValue(argv, name) {

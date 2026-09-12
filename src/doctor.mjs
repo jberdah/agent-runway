@@ -66,7 +66,7 @@ export async function diagnose({ env = process.env, fetchImpl = globalThis.fetch
     claude.attempt = {
       ok: true,
       endpoint: usage.endpoint,
-      tokenSource: usage.tokenSource,
+      credentialSource: usage.credentialSource,
       windows: usage.windows.length,
     };
   } catch (error) {
@@ -151,7 +151,9 @@ export function renderDoctor(report) {
   );
 
   if (attempt.ok) {
-    row("Answered", `${attempt.endpoint} (${attempt.windows} windows), token from ${attempt.tokenSource}`);
+    // Which credential answered, not which was resolved first: with a token and
+    // a cookie both present, those are different facts.
+    row("Answered", `${attempt.endpoint} (${attempt.windows} windows), via ${attempt.credentialSource}`);
   } else {
     row("Answered", `no - ${attempt.code}`);
     for (const line of attempt.message.split("\n")) out.push(`              ${line.trim()}`);

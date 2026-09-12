@@ -131,7 +131,7 @@ test("fetchUsage returns normalized windows on success", async () => {
   });
   assert.equal(usage.endpoint, "oauth/usage");
   assert.equal(usage.windows.length, 3);
-  assert.equal(usage.tokenSource, "env CLAUDE_CODE_OAUTH_TOKEN");
+  assert.equal(usage.credentialSource, "env CLAUDE_CODE_OAUTH_TOKEN");
 });
 
 test("no rendered output ever contains the token", async () => {
@@ -169,4 +169,117 @@ test("peak returns the highest window", () => {
 
 test("renderShort is one machine-readable line", () => {
   assert.equal(renderShort(normalize(SAMPLE)), "session=12%  weekly_all=78%  weekly_scoped=52%");
+});
+
+// ------------------------------------------------- which credential, and when
+
+const ORG = "00000000-0000-0000-0000-000000000000";
+const answers = (body) => async () => ({ status: 200, ok: true, text: async () => JSON.stringify(body) });
+const LIMITS = { limits: [{ kind: "session", percent: 7, severity: "normal", resets_at: "2026-09-13T00:00:00Z" }] };
+
+test("a session cookie alone is enough, with no token anywhere", async () => {
+  // The README calls this the one durable path, and it did not work: an OAuth
+  // token was demanded before the endpoint list was even built, so the cookie
+  // was never reached. That made the documented answer to Claude's credential
+  // problem unreachable in exactly the situation it exists for.
+  const usage = await fetchUsage({
+    env: {
+      AGENT_RUNWAY_CLAUDE_COOKIE: "sk-ant-sid01-x",
+      CLAUDE_ORG_ID: ORG,
+      AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1",
+    },
+    fetchImpl: answers(LIMITS),
+  });
+
+  assert.equal(usage.endpoint, "organizations/usage");
+  assert.equal(usage.credentialSource, "env AGENT_RUNWAY_CLAUDE_COOKIE");
+  assert.equal(usage.windows.length, 1);
+});
+
+test("the credential reported is the one that worked, not the first resolved", async () => {
+  // Both present, and only claude.ai answers. Reporting the OAuth source here
+  // made `doctor` wrong about the single thing it exists to answer.
+  const onlyCookieWorks = async (url, options) =>
+    options.headers.Cookie
+      ? { status: 200, ok: true, text: async () => JSON.stringify(LIMITS) }
+      : { status: 401, ok: false, text: async () => JSON.stringify({ error: { message: "expired" } }) };
+
+  const usage = await fetchUsage({
+    env: {
+      CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-stale",
+      AGENT_RUNWAY_CLAUDE_COOKIE: "sk-ant-sid01-good",
+      CLAUDE_ORG_ID: ORG,
+    },
+    fetchImpl: onlyCookieWorks,
+  });
+
+  assert.equal(usage.endpoint, "organizations/usage");
+  assert.equal(usage.credentialSource, "env AGENT_RUNWAY_CLAUDE_COOKIE");
+});
+
+test("claude.ai is never sent a Bearer, whatever credentials exist", async () => {
+  const seen = [];
+  const record = async (url, options) => {
+    seen.push({ url, auth: Boolean(options.headers.Authorization), cookie: Boolean(options.headers.Cookie) });
+    return { status: 401, ok: false, text: async () => "{}" };
+  };
+
+  await fetchUsage({
+    env: { CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-x", AGENT_RUNWAY_CLAUDE_COOKIE: "sk-ant-sid01-x", CLAUDE_ORG_ID: ORG },
+    fetchImpl: record,
+  }).catch(() => {});
+
+  const claudeAi = seen.find((s) => s.url.includes("claude.ai"));
+  assert.ok(claudeAi, "the cookie endpoint should have been tried");
+  assert.equal(claudeAi.auth, false, "a Bearer to claude.ai is a guaranteed 403");
+  assert.equal(claudeAi.cookie, true);
+});
+
+test("no credential names both paths, and never sends anyone to setup-token", async () => {
+  const error = await fetchUsage({
+    env: { AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1" },
+    fetchImpl: answers(LIMITS),
+  }).then(
+    () => null,
+    (e) => e
+  );
+
+  assert.ok(error instanceof UsageError);
+  assert.equal(error.code, "NO_TOKEN");
+  // setup-token may be named, but only to say it does not help. The project
+  // established that by trying it; pointing at it as a fix sends people down
+  // the one path already known to be closed.
+  assert.match(error.hint, /setup-token/);
+  assert.match(error.hint, /mints neither/);
+  assert.match(error.hint, /session-cookie/, "the durable path has to be offered");
+});
+
+test("a cookie without an org id says which half is missing", async () => {
+  const error = await fetchUsage({
+    env: { AGENT_RUNWAY_CLAUDE_COOKIE: "sk-ant-sid01-x", AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1", CLAUDE_ORG_ID: "" },
+    fetchImpl: answers(LIMITS),
+  }).then(
+    () => null,
+    (e) => e
+  );
+
+  // The org id has a file fallback, so this only holds when it is truly absent.
+  if (error) assert.match(error.message, /organization id/);
+});
+
+// --------------------------------------------------------- one version, once
+
+test("every file that states the version states the same one", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { VERSION } = await import("../src/core.mjs");
+
+  const read = (relative) =>
+    JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8"));
+
+  // Four places, bumped by hand every release. The release workflow checks the
+  // git tag against package.json and would not notice the other three drifting.
+  assert.equal(read("../package.json").version, VERSION, "package.json");
+  assert.equal(read("../.claude-plugin/plugin.json").version, VERSION, "plugin.json");
+  assert.equal(read("../.claude-plugin/marketplace.json").plugins[0].version, VERSION, "marketplace.json");
 });

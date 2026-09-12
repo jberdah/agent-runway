@@ -7,7 +7,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "0.2.4";
+export const VERSION = "0.3.0";
+
+/**
+ * The shape of what this tool answers, versioned separately from the tool.
+ *
+ * These are two different questions. A caller needs to know whether it can
+ * still read the answer, not whether the code that produced it moved on: a
+ * parser written against schema 1 should keep working across 0.9 and 2.0 as
+ * long as the shape holds. Bumped only when a field is removed or changes
+ * meaning — additions do not break a reader.
+ */
+export const SCHEMA_VERSION = 1;
 
 const USER_AGENT = `agent-runway/${VERSION} (+https://github.com/jberdah/agent-runway)`;
 
@@ -197,41 +208,66 @@ export function normalize(payload) {
   return { windows, extraUsage };
 }
 
+// What to say when nothing can authenticate a request. Never `claude
+// setup-token`: the token it mints lacks user:profile, which this project
+// established by trying it, and pointing at it sends people down the one path
+// already known to be closed.
+const NO_CREDENTIAL_HINT =
+  "Two credentials can read Claude usage, and `claude setup-token` mints neither -\n" +
+  "the token it produces lacks the user:profile scope the endpoint requires.\n\n" +
+  "  - Sign in to Claude Code, which keeps a session token carrying that scope.\n" +
+  "    It is refreshed only while Claude Code runs, so it goes stale when idle.\n" +
+  "  - Or paste your claude.ai sessionKey cookie into ~/.claude/session-cookie.\n" +
+  "    This is the durable path: it keeps working while Claude Code is closed.\n\n" +
+  "`agent-runway doctor` shows which sources were found and what each replied.";
+
 /**
  * Fetch usage for the current account.
  *
- * @returns {Promise<{windows: Array, extraUsage: object|null, endpoint: string, tokenSource: string, raw: object}>}
+ * @returns {Promise<{windows: Array, extraUsage: object|null, endpoint: string, credentialSource: string, raw: object}>}
  */
 export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
-  const resolved = resolveToken(env);
-  if (!resolved) {
-    throw new UsageError(
-      "NO_TOKEN",
-      "No Claude OAuth token found.",
-      "Run `claude setup-token` and export the result as CLAUDE_CODE_OAUTH_TOKEN."
-    );
-  }
-
-  const orgId = resolveOrgId(env);
+  const token = resolveToken(env);
   const cookie = resolveCookie(env);
+  const orgId = resolveOrgId(env);
 
-  // Each endpoint takes exactly one kind of credential. Sending a Bearer to
-  // claude.ai is not a fallback, it is a guaranteed 403 that only adds a
-  // confusing second line to every failure, so that endpoint is offered only
-  // when a session cookie exists to authenticate it.
-  const endpoints = [
-    {
+  // Each endpoint takes exactly one kind of credential, and is offered only
+  // when that credential exists. Sending a Bearer to claude.ai is not a
+  // fallback, it is a guaranteed 403 that adds a confusing second line to every
+  // failure.
+  //
+  // The list is built from what is available rather than gated behind an OAuth
+  // token: requiring one up front made the cookie unusable on its own, which is
+  // precisely the case it exists for — reading usage while Claude Code is
+  // closed, when no OAuth token is fresh.
+  const endpoints = [];
+  if (token) {
+    endpoints.push({
       name: "oauth/usage",
       url: "https://api.anthropic.com/api/oauth/usage",
-      headers: { Authorization: `Bearer ${resolved.token}` },
-    },
-  ];
-  if (orgId && cookie) {
+      headers: { Authorization: `Bearer ${token.token}` },
+      credentialSource: token.source,
+      expiredAt: token.expiredAt,
+    });
+  }
+  if (cookie && orgId) {
     endpoints.push({
       name: "organizations/usage",
       url: `https://claude.ai/api/organizations/${orgId}/usage`,
       headers: { Cookie: `sessionKey=${cookie.value}` },
+      credentialSource: cookie.source,
+      expiredAt: null,
     });
+  }
+
+  if (!endpoints.length) {
+    // Say which half is missing when one is present: "no org id" is a fix,
+    // "no credential" is a guess.
+    const detail =
+      cookie && !orgId
+        ? "A claude.ai session cookie was found, but not the organization id that endpoint needs."
+        : "No Claude credential found.";
+    throw new UsageError("NO_TOKEN", detail, NO_CREDENTIAL_HINT);
   }
 
   const failures = [];
@@ -243,7 +279,7 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
       // A fallback that cannot be reached must not bury what the primary
       // endpoint already answered. Record it and keep going; the verdict is
       // decided once every endpoint has had its turn.
-      failures.push(`${endpoint.name}: ${error.message}`);
+      failures.push(`${endpoint.name} (${endpoint.credentialSource}): ${error.message}`);
       continue;
     }
 
@@ -251,7 +287,10 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
       return {
         ...normalize(result.body),
         endpoint: endpoint.name,
-        tokenSource: resolved.source,
+        // The credential that actually worked, not the first one resolved.
+        // Reporting the OAuth source for a request the cookie authenticated
+        // made `doctor` wrong about the one thing it exists to answer.
+        credentialSource: endpoint.credentialSource,
         raw: result.body,
       };
     }
@@ -263,7 +302,11 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
       (result.body && typeof result.body === "object"
         ? result.body.error?.message ?? result.body.message ?? result.body.error?.type
         : null) || null;
-    failures.push(`${endpoint.name}: HTTP ${result.status}${apiMessage ? ` - ${apiMessage}` : ""}`);
+    const expired = endpoint.expiredAt ? ` (credential expired at ${endpoint.expiredAt})` : "";
+    failures.push(
+      `${endpoint.name} (${endpoint.credentialSource}): HTTP ${result.status}` +
+        `${apiMessage ? ` - ${apiMessage}` : ""}${expired}`
+    );
 
     if (result.status === 429) {
       throw new UsageError(
@@ -276,19 +319,19 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
 
   const authFailed = failures.some((f) => /HTTP 40[13]/.test(f));
   if (authFailed) {
-    const stale = resolved.expiredAt ? ` The token expired at ${resolved.expiredAt}.` : "";
     const scopeProblem = failures.some((f) => /scope|permission/i.test(f));
+    const tried = endpoints.length === 1 ? "The only credential available was rejected" : "Every credential was rejected";
     throw new UsageError(
       "AUTH",
-      `Token rejected (source: ${resolved.source}).${stale}\n  ` + failures.join("\n  "),
+      `${tried}.\n  ` + failures.join("\n  "),
       scopeProblem
-        ? "This token is valid, but not for reading usage. The endpoint requires the\n" +
+        ? "That token is valid, but not for reading usage. The endpoint requires the\n" +
           "user:profile scope, and `claude setup-token` does not grant it - regenerating\n" +
           "the token produces exactly the same refusal.\n\n" +
-          "Claude usage can only be read with Claude Code's own session credentials\n" +
-          "today, which means keeping Claude Code signed in. Codex, Copilot and\n" +
-          "Antigravity are unaffected: they have durable credentials of their own."
-        : "Sign in to Claude Code, or supply a token carrying the user:profile scope."
+          "The durable alternative is the claude.ai session cookie, which that endpoint\n" +
+          "takes instead of a Bearer: paste it into ~/.claude/session-cookie. Codex,\n" +
+          "Copilot and Antigravity are unaffected, having durable credentials of their own."
+        : NO_CREDENTIAL_HINT
     );
   }
   const reachable = failures.some((f) => /HTTP \d/.test(f));

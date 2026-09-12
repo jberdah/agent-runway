@@ -219,6 +219,39 @@ export async function modelsForAll(installs, options) {
 }
 
 /**
+ * Order two dotted version strings. Positive when `a` is newer.
+ *
+ * Comparing them as text puts 0.99.0 above 0.154.0, because "9" beats "1" one
+ * character at a time. Codex is already past 0.99, so picking "the highest
+ * version install" that way was a wrong answer waiting for a release. No semver
+ * dependency needed: segments compare as numbers, and a pre-release sorts below
+ * the release it leads to.
+ */
+export function compareVersions(a, b) {
+  const split = (v) => {
+    const [core, ...rest] = String(v ?? "").split("-");
+    return {
+      nums: core.split(".").map((n) => (/^\d+$/.test(n) ? Number(n) : 0)),
+      pre: rest.join("-"),
+    };
+  };
+
+  const left = split(a);
+  const right = split(b);
+  const depth = Math.max(left.nums.length, right.nums.length);
+  for (let i = 0; i < depth; i += 1) {
+    const delta = (left.nums[i] ?? 0) - (right.nums[i] ?? 0);
+    if (delta !== 0) return delta;
+  }
+
+  // 1.0.0 is newer than 1.0.0-alpha.1; between two pre-releases, text is the
+  // only ordering available and beats declaring them equal.
+  if (!left.pre && right.pre) return 1;
+  if (left.pre && !right.pre) return -1;
+  return left.pre.localeCompare(right.pre);
+}
+
+/**
  * Everything needed to invoke one agent correctly, in a single answer.
  *
  * Shaped for the caller that already knows how to build a command line and only
@@ -227,8 +260,10 @@ export async function modelsForAll(installs, options) {
  * model_flag for thirteen agents but resolves the binary with a bare `where`
  * and never checks the slug against it.
  *
- * `contract` is here so that consumers can depend on the shape and be told when
- * it changes, rather than discovering it through a crash.
+ * The shape is versioned by the envelope's `schemaVersion`, which covers every
+ * answer this tool gives. A per-command `contract` field used to live here and
+ * has been removed: two numbers answering the same question is how a caller
+ * ends up gating on the wrong one.
  */
 export async function resolveAgent(agent, { installs, model = null, capacity = null } = {}) {
   const mine = installs.filter((i) => i.agent === agent);
@@ -239,11 +274,10 @@ export async function resolveAgent(agent, { installs, model = null, capacity = n
   // the highest version, as the most complete catalogue.
   const preferred =
     usable.find((c) => c.kind === "path") ??
-    [...usable].sort((a, b) => String(b.version ?? "").localeCompare(String(a.version ?? "")))[0] ??
+    [...usable].sort((a, b) => compareVersions(b.version, a.version))[0] ??
     null;
 
   const answer = {
-    contract: 1,
     agent,
     resolved: Boolean(preferred),
     binary: preferred?.path ?? null,

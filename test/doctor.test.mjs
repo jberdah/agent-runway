@@ -129,7 +129,7 @@ test("a cached reading served after a failure is not shown as live", () => {
       cookie: { found: false, source: null },
       orgId: { known: true },
       claudeAiEligible: false,
-      attempt: { ok: true, endpoint: "oauth/usage", tokenSource: "env X", windows: 3 },
+      attempt: { ok: true, endpoint: "oauth/usage", credentialSource: "env X", windows: 3 },
     },
     providers: [
       { provider: "codex", status: "ok", stale: true, ageMs: 209_000, detail: "chatgpt.com unreachable" },
