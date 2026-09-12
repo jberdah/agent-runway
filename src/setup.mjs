@@ -32,13 +32,23 @@ const CTRL_D = 4;
 const BACKSPACE = 8;
 const LINE_FEED = 10;
 const CARRIAGE_RETURN = 13;
+const ESCAPE = 27;
 const DELETE = 127;
+
+const CSI = String.fromCharCode(27) + "[";
+const BRACKETED_PASTE_OFF = CSI + "?2004l";
+const BRACKETED_PASTE_ON = CSI + "?2004h";
 
 // ---------------------------------------------------------------- pure helpers
 
-/** Shape check only. Never a substitute for asking the API. */
+/**
+ * Catches an obviously mangled paste, nothing more. Deliberately permissive
+ * about the character set: the token format is not published, and the
+ * authoritative check is the API call that follows, so a strict charset here
+ * could only ever reject a legitimate token.
+ */
 export function tokenLooksValid(token) {
-  return typeof token === "string" && /^sk-ant-[A-Za-z0-9_-]{20,}$/.test(token.trim());
+  return typeof token === "string" && /^sk-ant-\S{16,}$/.test(token.trim());
 }
 
 /**
@@ -92,25 +102,47 @@ function askSecret(question) {
   if (!process.stdin.isTTY) return ask(question);
 
   return new Promise((resolve) => {
-    process.stdout.write(question);
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
+
+    // Terminals wrap pasted text in ESC[200~ ... ESC[201~ (bracketed paste). In
+    // raw mode those arrive as ordinary bytes, and only the ESC itself is below
+    // 32 — "[200~" is printable and lands inside the secret. Turn the mode off
+    // while reading, and parse escape sequences below rather than trusting it.
+    process.stdout.write(BRACKETED_PASTE_OFF);
+    process.stdout.write(question);
     stdin.setRawMode(true);
     stdin.resume();
 
     let value = "";
+    let escape = 0; // 0 = text, 1 = saw ESC, 2 = inside a CSI sequence
 
     const finish = (result, exitCode) => {
       stdin.removeListener("data", onData);
       stdin.setRawMode(wasRaw);
       stdin.pause();
-      process.stdout.write("\n");
+      process.stdout.write("\n" + BRACKETED_PASTE_ON);
       if (exitCode !== undefined) process.exit(exitCode);
       resolve(result);
     };
 
     const onData = (chunk) => {
       for (const byte of chunk) {
+        // Swallow a whole escape sequence, not just its first byte.
+        if (escape === 1) {
+          escape = byte === 0x5b ? 2 : 0; // 0x5b is "["
+          continue;
+        }
+        if (escape === 2) {
+          // A CSI sequence ends on a byte in 0x40-0x7e, e.g. "~" or "A".
+          if (byte >= 0x40 && byte <= 0x7e) escape = 0;
+          continue;
+        }
+        if (byte === ESCAPE) {
+          escape = 1;
+          continue;
+        }
+
         if (byte === CARRIAGE_RETURN || byte === LINE_FEED || byte === CTRL_D) {
           finish(value.trim());
           return;
@@ -123,7 +155,7 @@ function askSecret(question) {
           value = value.slice(0, -1);
           continue;
         }
-        if (byte < 32) continue; // arrow keys and other escape sequences
+        if (byte < 32) continue;
         value += String.fromCharCode(byte);
       }
     };
@@ -331,7 +363,16 @@ export async function setup(argv = []) {
 
   if (!tokenLooksValid(token)) {
     out("");
-    out("That does not look like a Claude token (expected sk-ant-...). Nothing saved.");
+    out(`Read ${token.length} characters, which do not start with sk-ant-. Nothing saved.`);
+    if (token.includes("sk-ant-")) {
+      // Almost always a terminal wrapping the paste in escape codes.
+      out("");
+      out("The prefix is present but not at the start, so the paste brought");
+      out("extra characters with it. Either type the token by hand, or hand it");
+      out("over without the prompt:");
+      out("");
+      out("  AGENT_RUNWAY_TOKEN=sk-ant-... agent-runway");
+    }
     return 1;
   }
 

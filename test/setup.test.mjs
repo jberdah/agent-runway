@@ -56,6 +56,10 @@ test("tokenLooksValid accepts real shapes and rejects junk", () => {
   assert.equal(tokenLooksValid("sk-ant-oat01-" + "A".repeat(40)), true);
   assert.equal(tokenLooksValid("  sk-ant-oat01-" + "b_9-".repeat(10) + "  "), true);
 
+  // The character set of a real token is not published, so the check must not
+  // reject one over an unexpected symbol: the API call is the real gate.
+  assert.equal(tokenLooksValid("sk-ant-oat01-" + "aA0+/=.~" .repeat(4)), true);
+
   assert.equal(tokenLooksValid(""), false);
   assert.equal(tokenLooksValid("hunter2"), false);
   assert.equal(tokenLooksValid("sk-ant-"), false, "prefix alone is not a token");
@@ -63,6 +67,15 @@ test("tokenLooksValid accepts real shapes and rejects junk", () => {
   assert.equal(tokenLooksValid(null), false);
   assert.equal(tokenLooksValid(undefined), false);
   assert.equal(tokenLooksValid(12345), false);
+});
+
+test("tokenLooksValid rejects a paste mangled by bracketed paste", () => {
+  // What a terminal actually delivers in raw mode: ESC[200~ around the paste.
+  // Only the ESC is a control byte, so "[200~" used to end up inside the token.
+  const real = "sk-ant-oat01-" + "A".repeat(40);
+  assert.equal(tokenLooksValid("[200~" + real), false);
+  assert.equal(tokenLooksValid("[200~" + real + "[201~"), false);
+  assert.equal(tokenLooksValid(real), true, "the same token is fine once unwrapped");
 });
 
 test("persistToken writes the token file, restricted on POSIX", () => {
