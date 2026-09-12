@@ -299,24 +299,30 @@ export async function setup(argv = []) {
   }
 
   out("");
-  out("`claude setup-token` opens a browser and prints a long-lived token.");
-  out("You run it and complete the sign-in yourself.");
-  out("");
 
-  if (await claudeCliAvailable()) {
-    if (await confirm("Run `claude setup-token` now?", true)) {
-      out("");
-      const completed = await runClaudeSetupToken();
-      if (!completed) {
+  // Ask before offering to create one: someone who already generated a token
+  // elsewhere should not have to decline a browser sign-in to reach the prompt.
+  if (!(await confirm("Do you already have a token to paste?", false))) {
+    out("");
+    out("`claude setup-token` opens a browser and prints a long-lived token.");
+    out("You run it and complete the sign-in yourself.");
+    out("");
+
+    if (await claudeCliAvailable()) {
+      if (await confirm("Run `claude setup-token` now?", true)) {
         out("");
-        out("That did not complete. You can run `claude setup-token` in another");
-        out("terminal and come back with the token.");
+        const completed = await runClaudeSetupToken();
+        if (!completed) {
+          out("");
+          out("That did not complete. You can run `claude setup-token` in another");
+          out("terminal and come back with the token.");
+        }
       }
+    } else {
+      out("The `claude` CLI was not found. Install it, or generate a token elsewhere:");
+      out("    npm install -g @anthropic-ai/claude-code");
+      out("    claude setup-token");
     }
-  } else {
-    out("The `claude` CLI was not found. Install it, or generate a token elsewhere:");
-    out("    npm install -g @anthropic-ai/claude-code");
-    out("    claude setup-token");
   }
 
   // 3. Take it, validate it, and only then store it.
