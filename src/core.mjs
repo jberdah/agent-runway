@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.3.1";
 
 /**
  * The shape of what this tool answers, versioned separately from the tool.
@@ -19,6 +19,32 @@ export const VERSION = "0.3.0";
  * meaning — additions do not break a reader.
  */
 export const SCHEMA_VERSION = 1;
+
+/** Keys the envelope reserves. A payload may not use them. */
+export const ENVELOPE_KEYS = ["tool", "toolVersion", "schemaVersion", "kind"];
+
+/**
+ * Wrap an answer so a caller can tell what it is holding.
+ *
+ * One definition for both transports: an agent reading MCP structured content
+ * and a script parsing `--json` must not receive two different objects.
+ *
+ * The envelope keys are written AFTER the payload, deliberately. Spreading the
+ * payload last is how `doctor`'s own `tool` object replaced the envelope's
+ * string, and how `resolve`'s binary version once replaced the tool's — twice,
+ * two releases running, each caught only because someone remembered the
+ * specific field. Reserving the four keys structurally means the next payload
+ * that happens to use one cannot do it again.
+ */
+export function envelope(kind, payload) {
+  return {
+    ...payload,
+    tool: "agent-runway",
+    toolVersion: VERSION,
+    schemaVersion: SCHEMA_VERSION,
+    kind,
+  };
+}
 
 const USER_AGENT = `agent-runway/${VERSION} (+https://github.com/jberdah/agent-runway)`;
 

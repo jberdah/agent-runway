@@ -12,7 +12,7 @@
 
 import { createInterface } from "node:readline";
 
-import { SCHEMA_VERSION, VERSION } from "./core.mjs";
+import { envelope, VERSION } from "./core.mjs";
 
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
@@ -204,13 +204,7 @@ const replyError = (id, code, message) => send({ jsonrpc: "2.0", id, error: { co
 // structuredContent and a script parsing stdout now see the same keys.
 const answer = (kind, text, structuredContent) => ({
   content: [{ type: "text", text }],
-  structuredContent: {
-    tool: "agent-runway",
-    toolVersion: VERSION,
-    schemaVersion: SCHEMA_VERSION,
-    kind,
-    ...structuredContent,
-  },
+  structuredContent: envelope(kind, structuredContent),
 });
 
 // ------------------------------------------------------------------ handlers

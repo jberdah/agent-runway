@@ -283,3 +283,32 @@ test("every file that states the version states the same one", async () => {
   assert.equal(read("../.claude-plugin/plugin.json").version, VERSION, "plugin.json");
   assert.equal(read("../.claude-plugin/marketplace.json").plugins[0].version, VERSION, "marketplace.json");
 });
+
+// ------------------------------------------------------ the envelope is fixed
+
+test("a payload can never overwrite the envelope, whatever keys it carries", async () => {
+  const { envelope, ENVELOPE_KEYS, SCHEMA_VERSION } = await import("../src/core.mjs");
+
+  // Twice in two releases a payload field replaced an envelope field: resolve's
+  // binary version landed on `version`, and doctor's own `tool` object landed
+  // on `tool`. Both were caught by remembering the specific field. Writing the
+  // envelope last removes the class instead of the instances.
+  const hostile = {
+    tool: { not: "a string" },
+    toolVersion: "0.0.0-from-the-payload",
+    schemaVersion: 99,
+    kind: "something-else",
+    real: "payload data",
+  };
+
+  const wrapped = envelope("capacity", hostile);
+  assert.equal(wrapped.tool, "agent-runway");
+  assert.equal(wrapped.schemaVersion, SCHEMA_VERSION);
+  assert.equal(wrapped.kind, "capacity");
+  assert.notEqual(wrapped.toolVersion, "0.0.0-from-the-payload");
+  assert.equal(wrapped.real, "payload data", "the rest of the payload survives intact");
+
+  // The reserved names are stated once, so a future field can be checked
+  // against them rather than against someone's memory.
+  assert.deepEqual(ENVELOPE_KEYS, ["tool", "toolVersion", "schemaVersion", "kind"]);
+});

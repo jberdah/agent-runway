@@ -113,8 +113,8 @@ For Claude Code specifically:
 claude mcp add agent-runway -- node /absolute/path/to/agent-runway/src/mcp.mjs
 ```
 
-Four tools, each answering with the same `tool` / `toolVersion` / `kind`
-envelope the CLI puts on `--json`:
+Four tools, each answering with the same `tool` / `toolVersion` /
+`schemaVersion` / `kind` envelope the CLI puts on `--json`:
 
 | Tool | Question |
 | --- | --- |
@@ -465,7 +465,7 @@ Everything printed under `--json` declares which question it answers, so a
 parser never has to know what was asked to read the answer:
 
 ```json
-{ "tool": "agent-runway", "toolVersion": "0.3.0", "schemaVersion": 1, "kind": "capacity" }
+{ "tool": "agent-runway", "toolVersion": "0.3.1", "schemaVersion": 1, "kind": "capacity" }
 ```
 
 | `kind` | Produced by |

@@ -1,6 +1,6 @@
 {
   "name": "agent-runway",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Quota and model discovery for the coding agents installed on this machine: how much runway each has left, and which model slugs each binary will actually accept.",
   "type": "module",
   "license": "MIT",

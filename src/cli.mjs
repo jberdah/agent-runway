@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Command line entry point. Also what the Claude Code skill shells out to.
 
-import { fetchUsage, SCHEMA_VERSION, UsageError, VERSION } from "./core.mjs";
+import { envelope, fetchUsage, UsageError, VERSION } from "./core.mjs";
 import { renderModels, renderProviders, renderShort, renderTable } from "./render.mjs";
 
 const HELP = `agent-runway ${VERSION}
@@ -17,7 +17,8 @@ Commands:
   setup        Guided first-time setup: find a credential, check it against
                the API, save it. It cannot mint one - no command does, for
                Claude - so it detects what exists and explains the options.
-               --env    also export AGENT_RUNWAY_TOKEN from your shell profile
+               --env    also export it from your shell profile, as the
+                        variable that credential is actually read from
                --force  replace a credential that already works
   doctor       Why a provider is not answering: which credential source won,
                which endpoint replied, what each one said, cache ages. Prints
@@ -82,26 +83,15 @@ const EXIT = { NO_TOKEN: 2, AUTH: 3, RATE_LIMITED: 4 };
 const GATE_EXIT = { proceed: 0, defer: 10, unknown: 11 };
 
 /**
- * Every `--json` answer carries the same three fields.
+ * Every `--json` answer, wrapped by the one envelope both transports share.
  *
- * Before this the flag meant three unrelated things depending on which other
- * flag it sat beside — a raw Anthropic payload, a decision, a model catalogue —
- * so nothing could parse it without first knowing what had been asked. `kind`
- * makes that readable from the answer alone. `--raw` stays outside: it exists
- * precisely to be the unwrapped provider payload, and promising it a shape
- * would be promising something we do not control.
- *
- * `toolVersion` rather than `version` because payloads already carry versions
- * of their own that matter more than ours: `resolve` reports the version of the
- * binary it found, and flattening a field called `version` over it would
- * silently replace "Codex 0.149.1" with the version of this tool.
+ * The flag used to mean three unrelated things depending on which other flag it
+ * sat beside — a raw Anthropic payload, a decision, a model catalogue — so
+ * nothing could parse it without first knowing what had been asked. `--raw`
+ * stays outside it: that flag exists to be the unwrapped provider payload, and
+ * promising it a shape would be promising something we do not control.
  */
-const emit = (kind, payload) =>
-  `${JSON.stringify(
-    { tool: "agent-runway", toolVersion: VERSION, schemaVersion: SCHEMA_VERSION, kind, ...payload },
-    null,
-    2
-  )}\n`;
+const emit = (kind, payload) => `${JSON.stringify(envelope(kind, payload), null, 2)}\n`;
 
 /** `--name value` or `--name=value`; null when absent. */
 function flagValue(argv, name) {

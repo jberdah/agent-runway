@@ -134,3 +134,28 @@ test("a credential is stored in the file the resolver will actually read", async
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("--env exports the variable the saved credential is actually read from", async () => {
+  const { envTargetFor, envExportLine } = await import("../src/setup.mjs");
+
+  // persistCredential already routed a cookie to session-cookie, but the --env
+  // path only knew about tokens. On Windows that put a sessionKey into
+  // AGENT_RUNWAY_TOKEN, where the resolver hands it to api.anthropic.com as a
+  // Bearer: a guaranteed 401, and a credential copied somewhere it never
+  // belonged. On POSIX it appended a line reading a file that was never written.
+  const cookie = envTargetFor("sk-ant-sid01-abcdefghijklmnop");
+  assert.equal(cookie.varName, "AGENT_RUNWAY_CLAUDE_COOKIE");
+  assert.match(cookie.file, /session-cookie$/);
+
+  const token = envTargetFor("sk-ant-oat01-abcdefghijklmnop");
+  assert.equal(token.varName, "AGENT_RUNWAY_TOKEN");
+  assert.match(token.file, /usage-token$/);
+
+  const line = envExportLine("/home/x/.zshrc", cookie.file, cookie.varName);
+  assert.match(line, /AGENT_RUNWAY_CLAUDE_COOKIE/);
+  assert.match(line, /session-cookie/);
+  assert.ok(!line.includes("usage-token"), "a cookie export must not read the token file");
+
+  const fish = envExportLine("/home/x/.config/fish/config.fish", cookie.file, cookie.varName);
+  assert.match(fish, /^set -gx AGENT_RUNWAY_CLAUDE_COOKIE/);
+});

@@ -1,12 +1,21 @@
-// Guided, cross-platform setup: obtain a token, validate it, persist it.
+// Guided, cross-platform setup: find a credential, validate it, persist it.
 //
-// The token is written to ~/.claude/usage-token (0600) rather than an
-// environment variable by default. An env var on macOS/Linux means writing the
-// secret into a shell rc file, which is frequently mode 644 and sometimes
-// committed to a dotfiles repository; a single 0600 file is safer, identical on
-// all three platforms, read automatically on every invocation, and revoked by
-// deleting it. `--env` remains available, but on POSIX it exports an
-// indirection to that file rather than a second copy of the secret.
+// It cannot mint one. No command issues a usage-scoped token for Claude today,
+// so what setup does is detect what exists, explain the two credentials that
+// work, and verify whichever is supplied before writing anything.
+//
+// Those two are not interchangeable, and every path here has to respect that: a
+// token authenticates api.anthropic.com with a Bearer, a claude.ai sessionKey
+// authenticates claude.ai, which refuses Bearers outright. Each is written to
+// the file its resolver reads and exported under the variable its resolver
+// reads — a cookie in the token's place is a credential nothing ever tries.
+//
+// The secret is written to a 0600 file rather than an environment variable by
+// default. An env var on macOS/Linux means writing it into a shell rc file,
+// frequently mode 644 and sometimes committed to a dotfiles repository; one
+// 0600 file is safer, identical on all three platforms, read automatically on
+// every invocation, and revoked by deleting it. `--env` remains available, but
+// on POSIX it exports an indirection to that file rather than a second copy.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -72,11 +81,22 @@ export function shellProfilePath(env = process.env, home = os.homedir(), platfor
  * The line to append to a shell profile. It reads the token file rather than
  * embedding the secret, so the token exists in exactly one place on disk.
  */
-export function envExportLine(profilePath, file = "$HOME/.claude/usage-token") {
+export function envExportLine(
+  profilePath,
+  file = "$HOME/.claude/usage-token",
+  varName = "AGENT_RUNWAY_TOKEN"
+) {
   if (profilePath && profilePath.endsWith("config.fish")) {
-    return `set -gx AGENT_RUNWAY_TOKEN (cat ${file} 2>/dev/null); # agent-runway`;
+    return `set -gx ${varName} (cat ${file} 2>/dev/null); # agent-runway`;
   }
-  return `export AGENT_RUNWAY_TOKEN="$(cat ${file} 2>/dev/null)"  # agent-runway`;
+  return `export ${varName}="$(cat ${file} 2>/dev/null)"  # agent-runway`;
+}
+
+/** The variable and file a given credential is read from. */
+export function envTargetFor(secret) {
+  return credentialKind(secret) === "cookie"
+    ? { varName: "AGENT_RUNWAY_CLAUDE_COOKIE", file: "$HOME/.claude/session-cookie", label: "cookie" }
+    : { varName: "AGENT_RUNWAY_TOKEN", file: "$HOME/.claude/usage-token", label: "token" };
 }
 
 // ------------------------------------------------------------------- terminal
@@ -255,18 +275,26 @@ function setWindowsUserEnv(name, value) {
   });
 }
 
-async function configureEnv(token) {
+async function configureEnv(secret) {
+  // A cookie and a token are read from different variables and different files.
+  // Exporting a sessionKey as AGENT_RUNWAY_TOKEN does not merely fail to help:
+  // the resolver then hands it to api.anthropic.com as a Bearer, which is a
+  // guaranteed 401 and a credential copied somewhere it was never meant to go.
+  // On POSIX the old code was quieter and no better — it appended a line
+  // reading the token file, which a cookie setup has never written.
+  const { varName, file, label } = envTargetFor(secret);
+
   if (IS_WINDOWS) {
     out("");
-    out("  Note: on Windows the variable holds a second copy of the token.");
-    out("  The token file alone is already picked up automatically.");
-    if (!(await confirm("  Set AGENT_RUNWAY_TOKEN for your user account anyway?", false))) {
+    out(`  Note: on Windows the variable holds a second copy of the ${label}.`);
+    out(`  The ${label} file alone is already picked up automatically.`);
+    if (!(await confirm(`  Set ${varName} for your user account anyway?`, false))) {
       return "skipped";
     }
-    const ok = await setWindowsUserEnv("AGENT_RUNWAY_TOKEN", token);
+    const ok = await setWindowsUserEnv(varName, secret);
     out(ok
       ? "  Set. Open a new terminal for it to take effect."
-      : "  Could not set it; the token file still works.");
+      : `  Could not set it; the ${label} file still works.`);
     return ok ? "windows-env" : "failed";
   }
 
@@ -274,7 +302,7 @@ async function configureEnv(token) {
   if (!profile) {
     out("");
     out("  Unknown shell, so nothing was edited. Add this line yourself if you want it:");
-    out(`    ${envExportLine(null)}`);
+    out(`    ${envExportLine(null, file, varName)}`);
     return "manual";
   }
 
@@ -284,16 +312,18 @@ async function configureEnv(token) {
   } catch {
     /* the profile may not exist yet */
   }
-  if (existing.includes("# agent-runway")) {
-    out(`  ${profile} already has the line; left untouched.`);
+  // Keyed on the variable, not just our tag: a profile already exporting a
+  // token should still gain the cookie line, and the reverse.
+  if (existing.includes("# agent-runway") && existing.includes(varName)) {
+    out(`  ${profile} already exports ${varName}; left untouched.`);
     return "already";
   }
 
-  const line = envExportLine(profile);
+  const line = envExportLine(profile, file, varName);
   out("");
   out(`  Append to ${profile}:`);
   out(`    ${line}`);
-  out("  It reads the token file rather than storing a second copy.");
+  out(`  It reads the ${label} file rather than storing a second copy.`);
   if (!(await confirm("  Append it?", true))) return "skipped";
 
   fs.appendFileSync(profile, "\n" + line + "\n", "utf8");
@@ -344,15 +374,18 @@ export async function setup(argv = []) {
     }
   }
 
-  // 2a. Token arriving on stdin. Lets the secret go straight from whatever
-  // produced it into the token file, without being displayed, selected or
-  // pasted. Also the sane path in CI.
+  // 2a. A credential arriving on stdin - a token or a claude.ai cookie. Lets
+  // the secret go straight from whatever produced it into the right file,
+  // without being displayed, selected or pasted. Also the sane path in CI.
   //
-  //   claude setup-token | agent-runway setup --force --stdin
   //   echo $TOKEN | agent-runway setup --force --stdin
+  //   pbpaste | agent-runway setup --force --stdin
   //
-  // The input is scanned rather than trusted whole, because `claude
-  // setup-token` prints instructions around the token.
+  // The example here used to be `claude setup-token | ...`, which the rest of
+  // this file explains is a dead end: that token lacks user:profile.
+  //
+  // The input is scanned rather than trusted whole, because whatever produced
+  // it may have printed prose around the secret.
   if (argv.includes("--stdin")) {
     const piped = await readStdin();
     const found = piped.match(/sk-ant-\S{16,}/)?.[0] ?? null;
@@ -361,7 +394,7 @@ export async function setup(argv = []) {
       out("No credential found on stdin. Expected something containing sk-ant-...");
       return 1;
     }
-    out(`Read a ${found.length}-character token from stdin. Checking it...`);
+    out(`Read a ${found.length}-character ${credentialKind(found)} from stdin. Checking it...`);
 
     const checked = await validateToken(found);
     if (!checked.ok) {

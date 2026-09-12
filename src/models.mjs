@@ -244,11 +244,37 @@ export function compareVersions(a, b) {
     if (delta !== 0) return delta;
   }
 
-  // 1.0.0 is newer than 1.0.0-alpha.1; between two pre-releases, text is the
-  // only ordering available and beats declaring them equal.
+  // 1.0.0 is newer than 1.0.0-alpha.1.
   if (!left.pre && right.pre) return 1;
   if (left.pre && !right.pre) return -1;
-  return left.pre.localeCompare(right.pre);
+  if (!left.pre && !right.pre) return 0;
+
+  // Pre-release identifiers compare segment by segment, and numeric segments
+  // compare as numbers: alpha.10 is newer than alpha.6, which plain text
+  // ordering reverses. The Codex builds this tool discovers are versioned
+  // exactly that way - 0.154.0-alpha.6.1 - so it is a real case, not a
+  // hypothetical one.
+  const leftPre = left.pre.split(".");
+  const rightPre = right.pre.split(".");
+  for (let i = 0; i < Math.max(leftPre.length, rightPre.length); i += 1) {
+    const a = leftPre[i];
+    const b = rightPre[i];
+    if (a === undefined) return -1; // alpha sorts below alpha.1
+    if (b === undefined) return 1;
+
+    const aNum = /^\d+$/.test(a);
+    const bNum = /^\d+$/.test(b);
+    if (aNum && bNum) {
+      const delta = Number(a) - Number(b);
+      if (delta !== 0) return delta;
+      continue;
+    }
+    // Mixed: semver ranks a numeric identifier below an alphanumeric one.
+    if (aNum !== bNum) return aNum ? -1 : 1;
+    const delta = a.localeCompare(b);
+    if (delta !== 0) return delta;
+  }
+  return 0;
 }
 
 /**
