@@ -2,7 +2,7 @@
 // Command line entry point. Also what the Claude Code skill shells out to.
 
 import { fetchUsage, UsageError, VERSION } from "./core.mjs";
-import { renderShort, renderTable } from "./render.mjs";
+import { renderProviders, renderShort, renderTable } from "./render.mjs";
 
 const HELP = `agent-runway ${VERSION}
 
@@ -19,11 +19,17 @@ Commands:
                --force  replace a token that already works
 
 Options:
-  --short      One line, machine friendly: session=79%  weekly_all=76%
-  --json       Raw API response, unformatted
-  --plain      Skip the header, print only the windows
-  -h, --help   Show this help
+  --all           Every provider found on this machine, not just Claude
+  --gate <N>      Decide: is there room to start work, at threshold N percent?
+                  Prints JSON. Exit 0 proceed, 10 defer, 11 unknown.
+  --short         One line, machine friendly: session=79%  weekly_all=76%
+  --json          Raw API response, unformatted
+  --plain         Skip the header, print only the windows
+  -h, --help      Show this help
   -v, --version
+
+Providers: claude, codex, copilot, antigravity. Each is read with the
+credentials that provider already keeps, and one failing never stops the rest.
 
 Authentication, first match wins:
   CLAUDE_CODE_OAUTH_TOKEN     token from \`claude setup-token\` (recommended)
@@ -40,6 +46,20 @@ Exit codes:
 
 const EXIT = { NO_TOKEN: 2, AUTH: 3, RATE_LIMITED: 4 };
 
+// A gate is a decision, so it answers in exit codes as well as on stdout, and
+// it has three outcomes rather than two: a provider that cannot be read is not
+// the same as one with room, and must never be treated as one.
+const GATE_EXIT = { proceed: 0, defer: 10, unknown: 11 };
+
+/** `--gate 90`, `--gate=90`, or `--gate` for the default. */
+function gateThreshold(argv) {
+  const index = argv.findIndex((a) => a === "--gate" || a.startsWith("--gate="));
+  if (index === -1) return null;
+  const inline = argv[index].split("=")[1];
+  const value = Number(inline ?? argv[index + 1]);
+  return Number.isFinite(value) && value >= 0 && value <= 100 ? value : 90;
+}
+
 async function main(argv) {
   const has = (...names) => names.some((n) => argv.includes(n));
 
@@ -48,6 +68,28 @@ async function main(argv) {
   if (argv[0] === "setup") {
     const { setup } = await import("./setup.mjs");
     return setup(argv.slice(1));
+  }
+
+  // Multi-provider paths go through the registry, which isolates failures:
+  // Antigravity needs its IDE open, a Codex token expires, gh may be absent.
+  const threshold = gateThreshold(argv);
+  if (threshold !== null || has("--all")) {
+    const { readAll, capacity } = await import("./providers/index.mjs");
+    const results = await readAll();
+
+    if (threshold === null) {
+      process.stdout.write(`\n${renderProviders(results)}\n`);
+      return 0;
+    }
+
+    const decision = capacity(results, { threshold });
+    process.stdout.write(`${JSON.stringify(decision, null, 2)}\n`);
+
+    // The worst outcome decides: an unreadable provider outranks a comfortable
+    // one, because "I could not tell" must not be reported as room to work.
+    if (decision.providers.some((p) => p.decision === "proceed")) return GATE_EXIT.proceed;
+    if (decision.anyUnknown) return GATE_EXIT.unknown;
+    return GATE_EXIT.defer;
   }
 
   if (has("-h", "--help")) {

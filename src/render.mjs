@@ -69,9 +69,52 @@ export function renderTable(usage, now = Date.now()) {
 
   if (usage.windows.some((w) => w.active)) {
     lines.push("");
-    lines.push("  * = window currently being counted against");
+    // The API's is_active flag does NOT mark the window being consumed right
+    // now: observed three times, twice with the ordering reversed, it lands on
+    // whichever window is furthest along. A session at 3% while actively in use
+    // goes unflagged and an untouched weekly at 87% carries it.
+    lines.push("  * = closest to its limit, as the API flags it");
   }
   return lines.join("\n");
+}
+
+/**
+ * Every provider at once, each with the state of its own read.
+ *
+ * A provider that could not be reached gets a line saying so rather than being
+ * dropped: the absence is information, and silently showing three of four would
+ * invite a delegation to the missing one.
+ */
+export function renderProviders(results) {
+  const lines = [];
+  for (const provider of results) {
+    const name = (provider.label ?? provider.provider).padEnd(16);
+    const age = provider.cached ? `  (cached ${Math.round(provider.ageMs / 1000)}s${provider.stale ? ", stale" : ""})` : "";
+
+    if (provider.status !== "ok") {
+      lines.push(`${name}${provider.status}${provider.detail ? ` - ${provider.detail}` : ""}`);
+      lines.push("");
+      continue;
+    }
+
+    lines.push(`${name}${provider.plan ?? ""}${age}`);
+    for (const w of provider.windows) {
+      if (!w.entitled) {
+        lines.push(`    ${w.label.padEnd(26)} not included in this plan`);
+        continue;
+      }
+      const counts = w.remaining != null && w.entitlement != null
+        ? `  ${w.remaining}/${w.entitlement} ${w.unit}`
+        : "";
+      lines.push(
+        `    ${w.label.padEnd(26)}${bar(w.percentUsed)} ${String(w.percentUsed).padStart(3)} %${counts}`
+      );
+      const reset = formatReset(w.resetsAt);
+      if (reset) lines.push(`    ${" ".repeat(26)}resets ${reset}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
 }
 
 /** Single line, for an agent checking headroom before a long task. */

@@ -28,7 +28,9 @@ const DEFAULT_TTL_MS = 60_000;
 // The same bound, and the same reasoning, as cclimits (STALE_CACHE_MAX_AGE).
 const STALE_MAX_MS = 24 * 60 * 60 * 1000;
 
-const dir = () => path.join(os.tmpdir(), "agent-runway-cache");
+// Overridable so a test suite never writes fabricated readings into the cache a
+// real run would then serve as genuine.
+const dir = () => process.env.AGENT_RUNWAY_CACHE_DIR || path.join(os.tmpdir(), "agent-runway-cache");
 const fileFor = (key) => path.join(dir(), `${key.replace(/[^a-z0-9_-]/gi, "_")}.json`);
 
 /** How long a cached answer stays fresh. 0 disables the cache entirely. */

@@ -36,7 +36,10 @@ for example checking headroom before a long task.
   session.
 - `weekly_all` covers every model over 7 days.
 - `weekly_scoped` is the per-model weekly window; its label names the model.
-- A `*` marks the window currently being counted against.
+- A `*` marks the window closest to its limit, which is not the one being
+  consumed right now: a session at 3% in active use goes unmarked while an
+  untouched weekly at 87% carries the mark. Report the marked window as the
+  constraint, never as "the window you are using".
 - `warning` and `critical` markers come from the API, not from a local
   threshold.
 
