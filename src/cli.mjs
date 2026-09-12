@@ -69,9 +69,14 @@ const GATE_EXIT = { proceed: 0, defer: 10, unknown: 11 };
  * makes that readable from the answer alone. `--raw` stays outside: it exists
  * precisely to be the unwrapped provider payload, and promising it a shape
  * would be promising something we do not control.
+ *
+ * `toolVersion` rather than `version` because payloads already carry versions
+ * of their own that matter more than ours: `resolve` reports the version of the
+ * binary it found, and flattening a field called `version` over it would
+ * silently replace "Codex 0.149.1" with the version of this tool.
  */
 const emit = (kind, payload) =>
-  `${JSON.stringify({ tool: "agent-runway", version: VERSION, kind, ...payload }, null, 2)}\n`;
+  `${JSON.stringify({ tool: "agent-runway", toolVersion: VERSION, kind, ...payload }, null, 2)}\n`;
 
 /** `--name value` or `--name=value`; null when absent. */
 function flagValue(argv, name) {

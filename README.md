@@ -366,7 +366,7 @@ even comparable: 0% of a five-hour window is not 0% of a monthly allowance.
 | `--gate <N>` | Decision as JSON plus an exit code |
 | `--any` | With `--gate`: proceed if any one provider has room |
 | `--short` | One line: `session=15%  weekly_all=79%  weekly_scoped=52%` |
-| `--json` | Normalized JSON, always carrying `tool` / `version` / `kind` |
+| `--json` | Normalized JSON, always carrying `tool` / `toolVersion` / `kind` |
 | `--raw` | The provider's own payload, unwrapped — not a stable contract |
 | `--plain` | Table without the header |
 

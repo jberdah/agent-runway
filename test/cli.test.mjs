@@ -115,11 +115,24 @@ test("every --json answer says which question it is answering", () => {
   const capacity = JSON.parse(run("--gate", "90").stdout);
   assert.equal(capacity.kind, "capacity");
   assert.equal(capacity.tool, "agent-runway");
-  assert.ok(capacity.version, "a parser needs to know which contract it got");
+  assert.ok(capacity.toolVersion, "a parser needs to know which contract it got");
 
   const usage = JSON.parse(run("--all", "--json").stdout);
   assert.equal(usage.kind, "usage");
   assert.ok(Array.isArray(usage.providers));
+});
+
+test("the envelope never overwrites a version the payload was reporting", () => {
+  // resolve answers with the version of the binary it found. An envelope field
+  // called `version` flattened over it would turn "Codex 0.149.1" into the
+  // version of this tool, which is the kind of wrong that reads as right.
+  const { stdout } = run("resolve", "codex", "--json");
+  const answer = JSON.parse(stdout);
+  assert.equal(answer.kind, "resolve");
+  assert.notEqual(answer.toolVersion, undefined);
+  if (answer.resolved) {
+    assert.notEqual(answer.version, answer.toolVersion, "that is the binary's version, not ours");
+  }
 });
 
 test("reading one provider and reading four describe a window the same way", () => {
