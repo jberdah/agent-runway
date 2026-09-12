@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import { clear, read, retryAfterSeconds, ttlMs, write } from "../src/cache.mjs";
@@ -58,4 +61,19 @@ test("retryAfterSeconds reads both forms the header can take", () => {
 
   // A date already past must not come back negative.
   assert.equal(retryAfterSeconds(headers(new Date(Date.now() - 60_000).toUTCString())), 0);
+});
+
+test("a reading older than a day is treated as a miss, not as stale", () => {
+  const k = key();
+  const file = path.join(os.tmpdir(), "agent-runway-cache", `${k}.json`);
+  try {
+    write(k, { windows: [] });
+    // Backdate it past the bound: a five-hour window has turned over many times
+    // by then, so the numbers are wrong rather than merely old.
+    const twoDaysAgo = Date.now() - 48 * 60 * 60 * 1000;
+    fs.writeFileSync(file, JSON.stringify({ at: twoDaysAgo, value: { windows: [] } }), "utf8");
+    assert.equal(read(k, 0), null);
+  } finally {
+    clear(k);
+  }
 });

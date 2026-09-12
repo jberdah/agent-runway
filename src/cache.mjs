@@ -22,6 +22,12 @@ import path from "node:path";
 
 const DEFAULT_TTL_MS = 60_000;
 
+// Beyond this, a reading is not stale, it is wrong: a five-hour window has
+// turned over several times and a weekly one has moved on. Serving it as a
+// fallback would be worse than admitting the provider could not be reached.
+// The same bound, and the same reasoning, as cclimits (STALE_CACHE_MAX_AGE).
+const STALE_MAX_MS = 24 * 60 * 60 * 1000;
+
 const dir = () => path.join(os.tmpdir(), "agent-runway-cache");
 const fileFor = (key) => path.join(dir(), `${key.replace(/[^a-z0-9_-]/gi, "_")}.json`);
 
@@ -41,6 +47,7 @@ export function read(key, maxAgeMs = DEFAULT_TTL_MS) {
     const { at, value } = JSON.parse(fs.readFileSync(fileFor(key), "utf8"));
     const ageMs = Date.now() - at;
     if (!Number.isFinite(ageMs) || ageMs < 0) return null;
+    if (ageMs > STALE_MAX_MS) return null; // too old to be worth anything
     return { value, ageMs, fresh: maxAgeMs > 0 && ageMs <= maxAgeMs };
   } catch {
     return null; // absent or unreadable is simply a miss
