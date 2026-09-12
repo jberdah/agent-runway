@@ -6,6 +6,7 @@
 // three. Every adapter is wrapped so a throw or a hang degrades that provider
 // alone.
 
+import * as cache from "../cache.mjs";
 import * as antigravity from "./antigravity.mjs";
 import * as claude from "./claude.mjs";
 import * as codex from "./codex.mjs";
@@ -22,6 +23,15 @@ async function readOne(name, options) {
   const adapter = ADAPTERS[name];
   if (!adapter) return unavailable(name, "error", "unknown provider");
 
+  const maxAge = options.cacheMs ?? cache.ttlMs(options.env ?? process.env);
+
+  // A recent answer beats asking again: these endpoints rate-limit reads, and a
+  // 429 on a usage endpoint reads like the account quota it reports on.
+  const hit = cache.read(name, maxAge);
+  if (hit?.fresh) {
+    return { ...hit.value, cached: true, ageMs: hit.ageMs, latencyMs: 0 };
+  }
+
   const started = Date.now();
   const guard = new Promise((resolve) =>
     setTimeout(
@@ -37,7 +47,26 @@ async function readOne(name, options) {
     result = unavailable(name, "error", String(error?.message ?? error));
   }
 
-  return { ...result, label: adapter.label ?? name, latencyMs: Date.now() - started };
+  const enriched = { ...result, label: adapter.label ?? name, latencyMs: Date.now() - started };
+
+  if (enriched.status === "ok") {
+    cache.write(name, enriched);
+    return enriched;
+  }
+
+  // Failed. Stale numbers about a five-hour window still say more than silence,
+  // so long as they are labelled as stale rather than passed off as current.
+  if (hit) {
+    return {
+      ...hit.value,
+      cached: true,
+      stale: true,
+      ageMs: hit.ageMs,
+      latencyMs: enriched.latencyMs,
+      detail: `serving a cached reading ${Math.round(hit.ageMs / 1000)}s old: ${enriched.detail ?? enriched.status}`,
+    };
+  }
+  return enriched;
 }
 
 /**
