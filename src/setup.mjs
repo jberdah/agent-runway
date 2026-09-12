@@ -299,8 +299,8 @@ export async function setup(argv = []) {
   }
 
   out("");
-  out("`claude setup-token` opens a browser and prints a long-lived token");
-  out("(about a year). You run it and complete the sign-in yourself.");
+  out("`claude setup-token` opens a browser and prints a long-lived token.");
+  out("You run it and complete the sign-in yourself.");
   out("");
 
   if (await claudeCliAvailable()) {

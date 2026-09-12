@@ -111,8 +111,13 @@ Cloning is enough to run it — `node src/cli.mjs` needs nothing installed.
 would rather do it by hand or automate it.
 
 A long-lived token comes from `claude setup-token`, which opens a browser and
-prints a year-long account secret. Setup can launch it for you, but **you**
-complete the sign-in — no tool should authenticate on your behalf.
+prints an account secret. Setup can launch it for you, but **you** complete the
+sign-in — no tool should authenticate on your behalf.
+
+"Long-lived" is that command's own wording; its exact lifetime is not something
+this project has measured. What matters here is the contrast with the last
+fallback source below, which is a session token that expires within hours unless
+Claude Code is running to refresh it.
 
 ### Why a file rather than an environment variable
 
