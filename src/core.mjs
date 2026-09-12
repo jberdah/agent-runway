@@ -201,7 +201,16 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
 
   const failures = [];
   for (const endpoint of endpoints) {
-    const result = await request(endpoint.url, resolved.token, fetchImpl);
+    let result;
+    try {
+      result = await request(endpoint.url, resolved.token, fetchImpl);
+    } catch (error) {
+      // A fallback that cannot be reached must not bury what the primary
+      // endpoint already answered. Record it and keep going; the verdict is
+      // decided once every endpoint has had its turn.
+      failures.push(`${endpoint.name}: ${error.message}`);
+      continue;
+    }
 
     if (result.ok) {
       return {
@@ -233,5 +242,10 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
     );
   }
 
-  throw new UsageError("NO_RESPONSE", `No usage endpoint responded (${failures.join(", ")}).`);
+  const reachable = failures.some((f) => /HTTP \d/.test(f));
+  throw new UsageError(
+    "NO_RESPONSE",
+    `No usage endpoint responded (${failures.join(", ")}).`,
+    reachable ? undefined : "Every endpoint failed to connect. Check the network or a proxy."
+  );
 }

@@ -97,6 +97,17 @@ async function confirm(question, defaultYes = true) {
   return /^(y|o)/i.test(answer);
 }
 
+/** Everything piped in, for `--stdin`. */
+function readStdin() {
+  return new Promise((resolve) => {
+    let data = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => (data += chunk));
+    process.stdin.on("end", () => resolve(data));
+    process.stdin.on("error", () => resolve(data));
+  });
+}
+
 /** Read a secret without echoing it to the terminal or the scrollback. */
 function askSecret(question) {
   if (!process.stdin.isTTY) return ask(question);
@@ -316,9 +327,43 @@ export async function setup(argv = []) {
     }
   }
 
-  // 2. Create one. This needs a real terminal: it spawns a browser sign-in and
-  // reads a secret back. Piped or in CI, say so rather than blocking on a
-  // prompt nobody can answer.
+  // 2a. Token arriving on stdin. Lets the secret go straight from whatever
+  // produced it into the token file, without being displayed, selected or
+  // pasted. Also the sane path in CI.
+  //
+  //   claude setup-token | agent-runway setup --force --stdin
+  //   echo $TOKEN | agent-runway setup --force --stdin
+  //
+  // The input is scanned rather than trusted whole, because `claude
+  // setup-token` prints instructions around the token.
+  if (argv.includes("--stdin")) {
+    const piped = await readStdin();
+    const found = piped.match(/sk-ant-\S{16,}/)?.[0] ?? null;
+
+    if (!found) {
+      out("No token found on stdin. Expected something containing sk-ant-...");
+      return 1;
+    }
+    out(`Read a ${found.length}-character token from stdin. Checking it...`);
+
+    const checked = await validateToken(found);
+    if (!checked.ok) {
+      const why = checked.error instanceof UsageError ? checked.error.message : String(checked.error);
+      out(`  Rejected: ${why}`);
+      out("  Nothing saved.");
+      return 1;
+    }
+
+    out("  Accepted.");
+    out(`  Saved to ${persistToken(found)}${IS_WINDOWS ? "" : " (mode 0600)"}.`);
+    out("");
+    out(renderTable(checked.usage));
+    return 0;
+  }
+
+  // 2b. Create one interactively. This needs a real terminal: it spawns a
+  // browser sign-in and reads a secret back. Piped or in CI, say so rather than
+  // blocking on a prompt nobody can answer.
   if (!process.stdin.isTTY) {
     out("");
     out("Setup is interactive and there is no terminal attached.");
