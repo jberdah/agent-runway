@@ -29,13 +29,21 @@ export const AGENTS = {
     // version, so the version comes free from the path. Two sit side by side
     // here, distinct from both the npm install and the VS Code extensions.
     //
-    // Only the Windows layout is verified. The others follow where Electron
-    // puts its user data on each platform, and are left to fail quietly rather
-    // than asserted: a path that does not exist simply yields no install.
+    // These are the app's user-data directories, which is where the embedded
+    // binaries live whatever the install source: a Microsoft Store package and
+    // an installer put the app itself in different places, but both write their
+    // agent builds here, so the install method does not have to be detected.
+    //
+    // No Linux entry, and that is a finding rather than an omission: there is no
+    // Claude desktop app for Linux, so an earlier guess at ~/.config/Claude was
+    // a path that could never match. (Established in brainclaw's surface
+    // inventory, which classifies Claude on Linux as a web surface.)
+    //
+    // Only the Windows layout has been observed here; macOS follows Electron's
+    // user-data convention and says so.
     desktop: {
       win32: ["AppData", "Roaming", "Claude", "claude-code"],
-      darwin: ["Library", "Application Support", "Claude", "claude-code"], // unverified
-      linux: [".config", "Claude", "claude-code"], // unverified
+      darwin: ["Library", "Application Support", "Claude", "claude-code"],
       verifiedOn: ["win32"],
     },
   },

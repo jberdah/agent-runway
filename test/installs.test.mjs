@@ -51,12 +51,13 @@ test("the macOS layout is searched, and declares itself unverified", () => {
   }
 });
 
-test("the Linux layout is searched too", () => {
+test("Linux has no desktop layout, deliberately", () => {
+  // There is no Claude desktop app for Linux, so searching ~/.config/Claude
+  // would be looking for something that cannot be there. Asserted so that a
+  // future "helpful" addition has to justify itself against this.
   const home = fakeHome({ ".config/Claude/claude-code/2.1.266/claude": "x" });
   try {
-    const found = claudeOnly(home, "linux");
-    assert.equal(found.length, 1);
-    assert.equal(found[0].layoutVerified, false);
+    assert.deepEqual(claudeOnly(home, "linux"), []);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
