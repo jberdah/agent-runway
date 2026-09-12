@@ -183,12 +183,21 @@ function codexExtensionBinary(dir) {
     } catch {
       continue;
     }
-    const entry = manifest.entrypoint ? path.join(base, manifest.entrypoint) : null;
+    // The entrypoint is written as "bin/codex.exe" but the platform directory
+    // IS that bin: joining the two produced bin/windows-x86_64/bin/codex.exe,
+    // which does not exist, and made a binary that was present look missing.
+    // Resolve by filename inside the platform directory, keeping the literal
+    // join as a fallback in case a future layout means it.
+    const name = manifest.entrypoint ? path.basename(manifest.entrypoint) : null;
+    const entry = [
+      name ? path.join(base, name) : null,
+      manifest.entrypoint ? path.join(base, manifest.entrypoint) : null,
+    ].find((candidate) => candidate && fs.existsSync(candidate));
+
     return {
-      path: entry && fs.existsSync(entry) ? entry : base,
+      path: entry ?? base,
       version: manifest.version ?? null,
-      // The manifest may name an entrypoint the extension unpacks on first use.
-      resolved: Boolean(entry && fs.existsSync(entry)),
+      resolved: Boolean(entry),
     };
   }
   return null;
