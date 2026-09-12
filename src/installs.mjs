@@ -25,21 +25,41 @@ export const AGENTS = {
     label: "Claude Code",
     binary: "claude",
     vscode: { publisher: "anthropic.claude-code", bundled: ["resources", "native-binary"] },
+    // The desktop app keeps its own copies under a directory named for each
+    // version, so the version comes free from the path. Two sit side by side
+    // here, distinct from both the npm install and the VS Code extensions.
+    //
+    // Only the Windows layout is verified. The others follow where Electron
+    // puts its user data on each platform, and are left to fail quietly rather
+    // than asserted: a path that does not exist simply yields no install.
+    desktop: {
+      win32: ["AppData", "Roaming", "Claude", "claude-code"],
+      darwin: ["Library", "Application Support", "Claude", "claude-code"], // unverified
+      linux: [".config", "Claude", "claude-code"], // unverified
+      verifiedOn: ["win32"],
+    },
   },
   codex: {
     label: "OpenAI Codex",
     binary: "codex",
     vscode: { publisher: "openai.chatgpt", bundled: null },
+    // `codex app` launches a desktop build. Not installed on the machine this
+    // was written against — it conflicts with the VS Code extension over MCP
+    // definitions — so no layout is guessed at here rather than shipping a path
+    // nobody has verified.
+    desktop: null,
   },
   copilot: {
     label: "GitHub Copilot",
     binary: "copilot",
     vscode: null, // Copilot Chat ships inside VS Code rather than as an extension
+    desktop: null,
   },
   antigravity: {
     label: "Antigravity",
     binary: "antigravity",
     vscode: null,
+    desktop: null,
   },
 };
 
@@ -152,6 +172,40 @@ const vscodeDirs = (home) => {
   return out;
 };
 
+/**
+ * Desktop apps that keep one directory per version of the agent they embed.
+ *
+ * Claude Desktop does this under its user-data directory, which means a machine
+ * can carry several more copies than PATH and the editor extensions reveal —
+ * five for Claude here, against the three found before this was added.
+ */
+function desktopInstalls(spec, home, platform, binaryName) {
+  const segments = spec?.[platform];
+  if (!segments) return [];
+
+  const root = path.join(home, ...segments);
+  let versions;
+  try {
+    versions = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory());
+  } catch {
+    return []; // app not installed, or a layout this has never seen
+  }
+
+  const exe = platform === "win32" ? `${binaryName}.exe` : binaryName;
+  const found = [];
+  for (const dir of versions) {
+    const file = path.join(root, dir.name, exe);
+    if (!fs.existsSync(file)) continue;
+    found.push({
+      path: file,
+      // The directory is named for the version, so no probe is needed.
+      version: /^\d+\.\d+\.\d+/.test(dir.name) ? dir.name : null,
+      verified: (spec.verifiedOn ?? []).includes(platform),
+    });
+  }
+  return found;
+}
+
 /** `anthropic.claude-code-2.1.269-win32-x64` -> "2.1.269" */
 function versionFromFolder(name, publisher) {
   return name.startsWith(publisher + "-")
@@ -208,13 +262,30 @@ function codexExtensionBinary(dir) {
  * @param {boolean} [options.withVersions] probe PATH binaries for a version string; costs seconds
  * @returns {Array<{agent, label, kind, path, version, fingerprint}>}
  */
-export function discoverInstalls({ home = os.homedir(), withVersions = false, agents } = {}) {
+export function discoverInstalls({
+  home = os.homedir(),
+  platform = process.platform,
+  withVersions = false,
+  agents,
+} = {}) {
   const wanted = agents?.length ? agents : Object.keys(AGENTS);
   const found = [];
 
   for (const id of wanted) {
     const spec = AGENTS[id];
     if (!spec) continue;
+
+    for (const app of desktopInstalls(spec.desktop, home, platform, spec.binary)) {
+      found.push({
+        agent: id,
+        label: spec.label,
+        kind: "desktop",
+        path: app.path,
+        version: app.version,
+        layoutVerified: app.verified,
+        fingerprint: fingerprint(app.path),
+      });
+    }
 
     const shim = onPath(spec.binary);
     if (shim) {
