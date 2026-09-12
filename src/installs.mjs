@@ -63,6 +63,14 @@ export const AGENTS = {
     vscode: null, // Copilot Chat ships inside VS Code rather than as an extension
     desktop: null,
   },
+  // Spawnable with a model, unlike Antigravity, which is why it earns an entry
+  // even though its quota is not read separately: it shares Google's.
+  gemini: {
+    label: "Gemini CLI",
+    binary: "gemini",
+    vscode: null,
+    desktop: null,
+  },
   antigravity: {
     label: "Antigravity",
     binary: "antigravity",
@@ -71,12 +79,69 @@ export const AGENTS = {
   },
 };
 
-/** Resolve a binary on PATH without launching it. */
+/**
+ * Where each CLI sits when PATH cannot be consulted.
+ *
+ * An MCP server is spawned by its client with a deliberately minimal
+ * environment — the official SDK passes only a small set of variables through —
+ * so `where` finds nothing and every PATH install disappears. Editor and
+ * desktop installs survive because they are found by absolute path; these give
+ * the CLIs the same footing.
+ *
+ * Every entry here was observed on a real machine rather than guessed.
+ */
+const KNOWN_LOCATIONS = {
+  win32: {
+    claude: ["AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/bin/claude.exe"],
+    codex: ["AppData/Local/Programs/OpenAI/Codex/bin/codex.exe"],
+    copilot: ["AppData/Roaming/npm/copilot.cmd"],
+    gemini: ["AppData/Roaming/npm/gemini.cmd"],
+    antigravity: ["AppData/Local/Programs/Antigravity/bin/antigravity.exe"],
+  },
+  // Unverified: this project has only ever run on Windows. The paths follow the
+  // usual global-npm and application conventions, and a miss simply yields no
+  // install rather than a wrong one.
+  darwin: {
+    claude: [".npm-global/bin/claude", "/usr/local/bin/claude"],
+    codex: [".codex/bin/codex", "/usr/local/bin/codex"],
+    copilot: [".npm-global/bin/copilot", "/usr/local/bin/copilot"],
+    gemini: [".npm-global/bin/gemini", "/usr/local/bin/gemini"],
+  },
+  linux: {
+    claude: [".npm-global/bin/claude", "/usr/local/bin/claude"],
+    codex: [".codex/bin/codex", "/usr/local/bin/codex"],
+    copilot: [".npm-global/bin/copilot", "/usr/local/bin/copilot"],
+    gemini: [".npm-global/bin/gemini", "/usr/local/bin/gemini"],
+  },
+};
+
+function knownLocation(agent, home, platform) {
+  for (const candidate of KNOWN_LOCATIONS[platform]?.[agent] ?? []) {
+    const file = path.isAbsolute(candidate) ? candidate : path.join(home, candidate);
+    if (fs.existsSync(file)) return file;
+  }
+  return null;
+}
+
+/**
+ * Resolve a binary on PATH without launching it.
+ *
+ * `where` returns every match, and the first is not always the usable one:
+ * `where codex` lists the real executable, an extensionless sh script and a
+ * .cmd launcher, and their order changes with PATH — under `npm run` the sh
+ * script came first, which Windows cannot spawn at all (EFTYPE). Rank by what
+ * can actually be executed rather than trusting the order.
+ */
 function onPath(binary) {
   try {
     const r = spawnSync(IS_WINDOWS ? "where" : "which", [binary], { ...SPAWN, timeout: 3000 });
     if (r.status !== 0) return null;
-    return (r.stdout ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] ?? null;
+
+    const matches = (r.stdout ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!IS_WINDOWS) return matches[0] ?? null;
+
+    const rank = (file) => (/\.exe$/i.test(file) ? 0 : /\.(cmd|bat)$/i.test(file) ? 1 : 2);
+    return [...matches].sort((a, b) => rank(a) - rank(b))[0] ?? null;
   } catch {
     return null;
   }
@@ -295,7 +360,15 @@ export function discoverInstalls({
       });
     }
 
-    const shim = onPath(spec.binary);
+    // A PATH match is not automatically usable. On Windows an extensionless
+    // entry is a POSIX shell script that Windows cannot spawn at all (EFTYPE),
+    // and `where codex` lists one alongside the real executable. Prefer a known
+    // location over a match that cannot be launched, rather than only falling
+    // back when PATH finds nothing.
+    const fromPath = onPath(spec.binary);
+    const launchable = !fromPath || platform !== "win32" || /\.(exe|cmd|bat)$/i.test(fromPath);
+    const shim = (launchable ? fromPath : null) ?? knownLocation(id, home, platform) ?? fromPath;
+
     if (shim) {
       // Fingerprint the program, not the launcher: the shim is unchanged by an
       // upgrade, so keying a cache on it would never invalidate.

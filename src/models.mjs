@@ -131,8 +131,7 @@ const CLAUDE_NOISE = /\.(md|txt|json)$|^\S+\.\d+$/;
  * Strong evidence, not a contract: an absent string very likely means the build
  * does not know that model, but the CLI may still forward an arbitrary slug.
  */
-async function claudeModels(binary) {
-  const pattern = /claude-(?:opus|sonnet|haiku|fable)-[0-9][0-9a-z.-]{0,18}/g;
+async function scanBinary(binary, pattern) {
   const found = new Set();
   let tail = "";
   try {
@@ -153,12 +152,20 @@ async function claudeModels(binary) {
   };
 }
 
+const claudeModels = (binary) =>
+  scanBinary(binary, /claude-(?:opus|sonnet|haiku|fable)-[0-9][0-9a-z.-]{0,18}/g);
+
 // --------------------------------------------------------------------- api
+
+/** Same treatment as Claude: no list command, so read the bundle. */
+const geminiModels = (binary) =>
+  scanBinary(binary, /gemini-[0-9][0-9a-z.-]{0,18}/g);
 
 const READERS = {
   codex: { authority: "declared", read: (install) => codexModels(install.path) },
   copilot: { authority: "declared", read: (install) => copilotModels(invocable(install)) },
   claude: { authority: "inferred", read: (install) => claudeModels(install.path) },
+  gemini: { authority: "inferred", read: (install) => geminiModels(install.path) },
 };
 
 /** Agents that can be spawned with a model argument. An IDE is not one. */
