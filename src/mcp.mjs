@@ -156,6 +156,36 @@ const TOOLS = [
       additionalProperties: true,
     },
   },
+  {
+    name: "diagnose_setup",
+    title: "Why a provider is not answering",
+    description:
+      "Call this AFTER a read has come back no_credentials or unreachable, to " +
+      "explain why. Reports which of five credential sources was used and " +
+      "whether it has expired, whether the cookie and organization id that the " +
+      "claude.ai endpoint requires are both present, what each endpoint replied " +
+      "in its own words, per-provider status, and the age of every cached " +
+      "reading. Sources are named and values never are, so the result contains " +
+      "no credential and can be quoted to the user in full. It reads every " +
+      "provider live, so calling it repeatedly earns a 429 from the usage " +
+      "endpoint - which reads like an exhausted account quota and is not one. " +
+      "Once per failure, not as a health check.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: {
+      type: "object",
+      properties: {
+        tool: { type: "string" },
+        toolVersion: { type: "string" },
+        kind: { type: "string" },
+        runtime: LOOSE,
+        claude: LOOSE,
+        providers: { type: "array", items: LOOSE },
+        cache: LOOSE,
+      },
+      required: ["tool", "toolVersion", "kind", "runtime", "claude", "providers"],
+      additionalProperties: true,
+    },
+  },
 ];
 
 function send(message) {
@@ -226,7 +256,20 @@ async function listModels(args) {
   return answer("models", renderModels(catalogues, skew), { catalogues, skew });
 }
 
-const HANDLERS = { get_usage: getUsage, check_capacity: checkCapacity, list_models: listModels };
+async function diagnoseSetup() {
+  const { diagnose, renderDoctor } = await import("./doctor.mjs");
+  const report = await diagnose();
+  // The rendered text is what the model should quote; the structured report is
+  // what it should branch on. Same content, so the two cannot disagree.
+  return answer("doctor", renderDoctor(report), report);
+}
+
+const HANDLERS = {
+  get_usage: getUsage,
+  check_capacity: checkCapacity,
+  list_models: listModels,
+  diagnose_setup: diagnoseSetup,
+};
 
 async function callTool(params) {
   const handler = HANDLERS[params?.name];

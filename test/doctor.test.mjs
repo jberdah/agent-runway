@@ -123,7 +123,7 @@ test("a cached reading served after a failure is not shown as live", () => {
   // renderDoctor is pure, so the case the registry produces on a real failure
   // can be asserted without arranging that failure.
   const text = renderDoctor({
-    tool: { version: "0.0.0", node: "v24", platform: "linux", home: "/home/x" },
+    runtime: { version: "0.0.0", node: "v24", platform: "linux", home: "/home/x" },
     claude: {
       token: { found: true, source: "env X", expiredAt: null },
       cookie: { found: false, source: null },

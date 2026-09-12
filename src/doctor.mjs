@@ -108,7 +108,12 @@ export async function diagnose({ env = process.env, fetchImpl = globalThis.fetch
   const readings = entries.filter((e) => PROVIDER_IDS.includes(e.key));
 
   return {
-    tool: { version: VERSION, node: process.version, platform: process.platform, home: os.homedir() },
+    // `runtime`, not `tool`: the JSON envelope sets `tool: "agent-runway"`, and
+    // a payload field of the same name flattened an object over it — the same
+    // collision that once put this tool's version where a Codex binary's
+    // belonged. A test now asserts the envelope survives across every kind,
+    // rather than against the one field that happened to be remembered.
+    runtime: { version: VERSION, node: process.version, platform: process.platform, home: os.homedir() },
     claude,
     providers,
     cache: {
@@ -129,8 +134,8 @@ export function renderDoctor(report) {
   const row = (label, value) => out.push(`  ${label.padEnd(12)}${value}`);
 
   out.push("agent-runway doctor", "");
-  row("Tool", `${report.tool.version}, Node ${report.tool.node}, ${report.tool.platform}`);
-  row("Home", report.tool.home);
+  row("Tool", `${report.runtime.version}, Node ${report.runtime.node}, ${report.runtime.platform}`);
+  row("Home", report.runtime.home);
 
   out.push("", "Claude credentials");
   const { token, cookie, orgId, claudeAiEligible, attempt } = report.claude;

@@ -32,6 +32,9 @@ const calls = [
   { name: "get_usage", arguments: { provider: "codex" } },
   { name: "check_capacity", arguments: { threshold: 90 } },
   { name: "list_models", arguments: { agent: "codex" } },
+  // Last on purpose: it reads every provider live, so putting it first would
+  // shape what the calls above see.
+  { name: "diagnose_setup", arguments: {} },
 ];
 
 for (const call of calls) {

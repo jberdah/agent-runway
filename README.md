@@ -107,6 +107,22 @@ For Claude Code specifically:
 claude mcp add agent-runway -- node /absolute/path/to/agent-runway/src/mcp.mjs
 ```
 
+Four tools, each answering with the same `tool` / `toolVersion` / `kind`
+envelope the CLI puts on `--json`:
+
+| Tool | Question |
+| --- | --- |
+| `get_usage` | how much is left, per provider |
+| `check_capacity` | proceed, defer or unknown — takes `provider` and `rule` |
+| `list_models` | which slugs a given install will accept |
+| `diagnose_setup` | why a provider is not answering |
+
+`diagnose_setup` exists because an agent is the first to meet the failure and
+had no way to explain it: `get_usage` hands back `unreachable` and one line of
+detail. It reads every provider live, so it belongs after a failure, not as a
+health check — repeated calls earn a 429 from the usage endpoint, which then
+looks like an exhausted account quota and is not one.
+
 ### As a CLI
 
 ```bash

@@ -36,13 +36,33 @@ function seed(provider, percentUsed, { kind = "session", allowed = null } = {}) 
   fs.writeFileSync(path.join(CACHE_DIR, `${provider}.json`), JSON.stringify({ at: Date.now(), value }));
 }
 
+/** Trailing object argument, when present, overrides environment variables. */
 function run(...args) {
+  const extraEnv = typeof args.at(-1) === "object" ? args.pop() : {};
   const result = spawnSync(process.execPath, [CLI, ...args], {
     encoding: "utf8",
-    env: { ...process.env, AGENT_RUNWAY_CACHE_DIR: CACHE_DIR },
+    env: {
+      ...process.env,
+      AGENT_RUNWAY_CACHE_DIR: CACHE_DIR,
+      // The seeded readings are written once at module load and this file takes
+      // minutes to run. Without a long TTL the later tests would fall through
+      // to real adapters and start depending on gh, a live IDE and the network.
+      AGENT_RUNWAY_CACHE_MS: "600000",
+      ...extraEnv,
+    },
   });
   return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
+
+// No credential anywhere, and forbidden from reading the machine's own: enough
+// for the Claude path to fail before it reaches the network.
+const OFFLINE = {
+  CLAUDE_CODE_OAUTH_TOKEN: "",
+  AGENT_RUNWAY_TOKEN: "",
+  ANTHROPIC_AUTH_TOKEN: "",
+  AGENT_RUNWAY_CLAUDE_COOKIE: "",
+  AGENT_RUNWAY_NO_LOCAL_CREDENTIALS: "1",
+};
 
 // Claude nearly out, Codex nearly untouched: the exact pair that used to be
 // reported as room to work.
@@ -140,6 +160,27 @@ test("every --json answer says which question it is answering", () => {
   assert.ok(Array.isArray(usage.providers));
 });
 
+test("the envelope survives on every kind, whatever the payload holds", () => {
+  // Written after the second collision, not the first. `version` was caught by
+  // remembering that resolve reports a binary's version; `tool` was not, and
+  // shipped - doctor's report had a `tool` object of its own that flattened
+  // over the envelope's string. Checking one field on one command is what let
+  // that through, so this checks every kind.
+  const cases = [
+    ["capacity", run("--gate", "90")],
+    ["usage", run("--all", "--json")],
+    ["models", run("--models", "--json")],
+    ["doctor", run("doctor", "--json", OFFLINE)],
+  ];
+
+  for (const [kind, { stdout }] of cases) {
+    const answer = JSON.parse(stdout);
+    assert.equal(answer.kind, kind);
+    assert.equal(answer.tool, "agent-runway", `${kind} lost the envelope's tool field`);
+    assert.equal(typeof answer.toolVersion, "string", `${kind} lost toolVersion`);
+  }
+});
+
 test("the envelope never overwrites a version the payload was reporting", () => {
   // resolve answers with the version of the binary it found. An envelope field
   // called `version` flattened over it would turn "Codex 0.149.1" into the
@@ -147,6 +188,7 @@ test("the envelope never overwrites a version the payload was reporting", () => 
   const { stdout } = run("resolve", "codex", "--json");
   const answer = JSON.parse(stdout);
   assert.equal(answer.kind, "resolve");
+  assert.equal(answer.tool, "agent-runway");
   assert.notEqual(answer.toolVersion, undefined);
   if (answer.resolved) {
     assert.notEqual(answer.version, answer.toolVersion, "that is the binary's version, not ours");

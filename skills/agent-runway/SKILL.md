@@ -22,9 +22,14 @@ agent-runway doctor                      # why a provider is not answering
 ```
 
 When a provider comes back `no_credentials` or `unreachable` and the user wants
-to know why, run `doctor` rather than guessing: it names which credential source
-won, which endpoint replied, and what it said. It prints no secret, so its
-output can be quoted in full.
+to know why, use `doctor` — the `diagnose_setup` tool over MCP, the `doctor`
+command otherwise — rather than guessing. It names which credential source won,
+whether it has expired, which endpoint replied and what it said. It prints no
+secret, so its output can be quoted in full.
+
+**Once per failure, not as a health check.** It reads every provider live, and
+repeated calls earn a 429 from the usage endpoint — which reads like an
+exhausted account quota and is not one.
 
 `--json` works on every command and always returns the same contract, tagged
 with `kind` (`usage`, `capacity`, `models`, `resolve`). `--raw` returns the
