@@ -11,7 +11,7 @@
       "displayName": "Agent Runway",
       "source": "./",
       "description": "Quota and model discovery for the coding agents installed on this machine: how much runway each has left, and which model slugs each binary will actually accept.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "jberdah",
         "url": "https://github.com/jberdah"
