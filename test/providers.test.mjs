@@ -270,6 +270,26 @@ test("the two questions a gate can be asked give different answers", () => {
   assert.equal(fanOut.overall.scoped, null);
 });
 
+test("a provider that could not be read does not block the ones that could", () => {
+  const decision = capacity(
+    [
+      reading("claude", [makeWindow({ kind: "session", percentUsed: 10 })]),
+      reading("codex", [makeWindow({ kind: "session", percentUsed: 4 })]),
+      // The everyday case on this machine: the IDE is simply not open.
+      { provider: "antigravity", label: "Antigravity", status: "unreachable", windows: [], detail: "IDE closed" },
+    ],
+    { threshold: 90 }
+  );
+
+  // The rule says "every READABLE provider", and a closed IDE is not a
+  // readable provider under the threshold - it is outside the set.
+  assert.equal(decision.overall.decision, "proceed");
+  // But it is never silently dropped: a caller can see the answer rests on
+  // three providers rather than four.
+  assert.deepEqual(decision.overall.unreadable, ["antigravity"]);
+  assert.equal(decision.anyUnknown, true);
+});
+
 test("a known blocker outranks a provider that could not be read", () => {
   const decision = capacity(
     [

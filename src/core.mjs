@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "0.2.2";
+export const VERSION = "0.2.3";
 
 const USER_AGENT = `agent-runway/${VERSION} (+https://github.com/jberdah/agent-runway)`;
 

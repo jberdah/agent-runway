@@ -102,19 +102,19 @@ const RULES = {
 };
 
 function overallDecision(providers, rule) {
-  if (!providers.length) return "unknown";
-  const has = (d) => providers.some((p) => p.decision === d);
+  // A provider that could not be read is neither under the threshold nor over
+  // it: it is outside the set the rule speaks about. Counting it as blocking
+  // contradicted the rule's own wording — "every READABLE provider" — and made
+  // a closed Antigravity IDE answer "unknown" for a machine where Claude and
+  // Codex both had room. The unreadable ones are named in `overall.unreadable`
+  // instead, so a decision is never quietly based on partial data.
+  const readable = providers.filter((p) => p.decision !== "unknown");
+  if (!readable.length) return "unknown";
 
   if (rule === "any") {
-    if (has("proceed")) return "proceed";
-    return has("unknown") ? "unknown" : "defer";
+    return readable.some((p) => p.decision === "proceed") ? "proceed" : "defer";
   }
-  // A provider known to be blocked outranks one that could not be read: both
-  // stop the work, and "blocked until 14:00" is actionable where "could not
-  // tell" is not.
-  if (has("defer")) return "defer";
-  if (has("unknown")) return "unknown";
-  return "proceed";
+  return readable.some((p) => p.decision === "defer") ? "defer" : "proceed";
 }
 
 /**
@@ -185,6 +185,9 @@ export function capacity(results, { threshold = 90, rule = "all" } = {}) {
       rule: rule === "any" ? "any" : "all",
       ruleText: RULES[rule] ?? RULES.all,
       scoped: providers.length === 1 ? providers[0].provider : null,
+      // Named, not merged into the decision: "proceed, and two providers could
+      // not be read" is a different situation from "proceed".
+      unreadable: providers.filter((p) => p.decision === "unknown").map((p) => p.provider),
     },
     providers,
     recommended: recommended

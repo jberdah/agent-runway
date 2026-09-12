@@ -18,7 +18,13 @@ agent-runway --models                    # what each install accepts, and where 
 agent-runway --gate 90 --provider claude # can I keep working? 0 proceed, 10 defer, 11 unknown
 agent-runway --gate 90 --any             # could any agent here take this job?
 agent-runway resolve codex --model gpt-6-astra   # one answer before spawning
+agent-runway doctor                      # why a provider is not answering
 ```
+
+When a provider comes back `no_credentials` or `unreachable` and the user wants
+to know why, run `doctor` rather than guessing: it names which credential source
+won, which endpoint replied, and what it said. It prints no secret, so its
+output can be quoted in full.
 
 `--json` works on every command and always returns the same contract, tagged
 with `kind` (`usage`, `capacity`, `models`, `resolve`). `--raw` returns the
@@ -61,6 +67,14 @@ rather than implying it is at zero or unknown-but-checkable.
   consumed right now: a session at 3% in active use goes unmarked while an
   untouched weekly at 87% carries it. Report it as the constraint, never as
   "the window you are using".
+- **The binding window is not a task budget.** It answers "which bar is nearest
+  the wall", not "does this piece of work fit". A session at 15% beside a weekly
+  at 89% binds on the weekly — yet a fan-out burns the session first. Read
+  `windows[]`, which every answer carries, and say which window the work will
+  actually consume.
+- A `proceed` can rest on fewer providers than you think. `overall.unreadable`
+  names the ones that could not be read at all; mention them rather than
+  presenting the answer as covering everything installed.
 - `not included in this plan` means the account has no entitlement to that
   quota. It is not an exhausted quota, and must never be reported as one.
 - A provider may come back `unreachable` or `no_credentials`. That is

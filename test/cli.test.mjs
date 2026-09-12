@@ -80,6 +80,24 @@ test("--provider=id is accepted as well as --provider id", () => {
   assert.equal(run("--provider=claude", "--gate", "90").code, 10);
 });
 
+test("a gate refuses an input it cannot use rather than inventing a threshold", () => {
+  for (const bad of ["foo", "150", "-1", "NaN"]) {
+    const { code, stderr } = run("--gate", bad, "--provider", "codex");
+    assert.equal(code, 1, `--gate ${bad} must not silently become 90`);
+    assert.match(stderr, /number from 0 to 100/);
+  }
+});
+
+test("a bare --gate still means the default, including before another flag", () => {
+  // `--gate` with nothing after it, and `--gate --provider x`, are both the
+  // documented default rather than a malformed value.
+  assert.equal(JSON.parse(run("--gate", "--provider", "codex").stdout).threshold, 90);
+  assert.equal(JSON.parse(run("--provider", "codex", "--gate").stdout).threshold, 90);
+  assert.equal(JSON.parse(run("--gate=75", "--provider", "codex").stdout).threshold, 75);
+  // 0 and 100 are usable thresholds, not falsy input to be replaced.
+  assert.equal(JSON.parse(run("--gate", "0", "--provider", "codex").stdout).threshold, 0);
+});
+
 test("an unknown provider is refused by name, not silently ignored", () => {
   const { code, stderr } = run("--provider", "nope", "--gate", "90");
   assert.equal(code, 1);

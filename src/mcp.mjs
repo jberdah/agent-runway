@@ -49,8 +49,13 @@ const TOOLS = [
     },
     outputSchema: {
       type: "object",
-      properties: { providers: { type: "array", items: LOOSE } },
-      required: ["providers"],
+      properties: {
+        tool: { type: "string" },
+        toolVersion: { type: "string" },
+        kind: { type: "string" },
+        providers: { type: "array", items: LOOSE },
+      },
+      required: ["tool", "toolVersion", "kind", "providers"],
       additionalProperties: true,
     },
   },
@@ -101,12 +106,15 @@ const TOOLS = [
     outputSchema: {
       type: "object",
       properties: {
+        tool: { type: "string" },
+        toolVersion: { type: "string" },
+        kind: { type: "string" },
         threshold: { type: "number" },
         overall: LOOSE,
         providers: { type: "array", items: LOOSE },
         anyUnknown: { type: "boolean" },
       },
-      required: ["threshold", "overall", "providers", "anyUnknown"],
+      required: ["tool", "toolVersion", "kind", "threshold", "overall", "providers", "anyUnknown"],
       additionalProperties: true,
     },
   },
@@ -138,10 +146,13 @@ const TOOLS = [
     outputSchema: {
       type: "object",
       properties: {
+        tool: { type: "string" },
+        toolVersion: { type: "string" },
+        kind: { type: "string" },
         catalogues: { type: "array", items: LOOSE },
         skew: { type: "array", items: LOOSE },
       },
-      required: ["catalogues", "skew"],
+      required: ["tool", "toolVersion", "kind", "catalogues", "skew"],
       additionalProperties: true,
     },
   },
@@ -154,7 +165,13 @@ function send(message) {
 const reply = (id, result) => send({ jsonrpc: "2.0", id, result });
 const replyError = (id, code, message) => send({ jsonrpc: "2.0", id, error: { code, message } });
 
-const answer = (text, structuredContent) => ({ content: [{ type: "text", text }], structuredContent });
+// The same envelope the CLI puts on --json. Two transports describing one
+// answer should not hand a caller two different objects: an agent reading
+// structuredContent and a script parsing stdout now see the same keys.
+const answer = (kind, text, structuredContent) => ({
+  content: [{ type: "text", text }],
+  structuredContent: { tool: "agent-runway", toolVersion: VERSION, kind, ...structuredContent },
+});
 
 // ------------------------------------------------------------------ handlers
 
@@ -165,7 +182,7 @@ async function getUsage(args) {
   const wanted = args?.provider && args.provider !== "all" ? [args.provider] : undefined;
   const providers = await readAll(wanted ? { providers: wanted } : {});
 
-  return answer(renderProviders(providers), { providers });
+  return answer("usage", renderProviders(providers), { providers });
 }
 
 async function checkCapacity(args) {
@@ -190,7 +207,7 @@ async function checkCapacity(args) {
         (decision.recommended.comparable ? "" : " (candidates are not directly comparable)")
     );
   }
-  return answer(lines.join("\n"), decision);
+  return answer("capacity", lines.join("\n"), decision);
 }
 
 async function listModels(args) {
@@ -206,7 +223,7 @@ async function listModels(args) {
   const catalogues = await models.modelsForAll(installs);
   const skew = models.modelSkew(catalogues);
 
-  return answer(renderModels(catalogues, skew), { catalogues, skew });
+  return answer("models", renderModels(catalogues, skew), { catalogues, skew });
 }
 
 const HANDLERS = { get_usage: getUsage, check_capacity: checkCapacity, list_models: listModels };

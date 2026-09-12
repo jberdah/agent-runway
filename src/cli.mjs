@@ -17,6 +17,9 @@ Commands:
   setup        Guided first-time setup: create a token, check it, save it.
                --env    also export AGENT_RUNWAY_TOKEN from your shell profile
                --force  replace a token that already works
+  doctor       Why a provider is not answering: which credential source won,
+               which endpoint replied, what each one said, cache ages. Prints
+               no secret, so it is safe to paste into an issue.
 
 Options:
   --all           Every provider found on this machine, not just Claude
@@ -85,13 +88,35 @@ function flagValue(argv, name) {
   return argv[i].split("=")[1] ?? argv[i + 1] ?? null;
 }
 
-/** `--gate 90`, `--gate=90`, or `--gate` for the default. */
+const GATE_DEFAULT = 90;
+
+/**
+ * `--gate 90`, `--gate=90`, or `--gate` for the default.
+ *
+ * @returns {null | {value: number} | {invalid: string}} null when absent.
+ *
+ * A gate that silently falls back to 90 when handed nonsense answers a question
+ * nobody asked: `--gate 150` and `--gate foo` are mistakes, and on a command
+ * whose whole output is a decision they have to be refused rather than guessed
+ * past. A bare `--gate`, or one followed by another flag, still means 90.
+ */
 function gateThreshold(argv) {
   const index = argv.findIndex((a) => a === "--gate" || a.startsWith("--gate="));
   if (index === -1) return null;
+
+  // A leading dash alone does not mean "a flag follows": `--gate -1` is a value
+  // and a bad one, and treating it as an absent value quietly produced 90 —
+  // exactly the silent fallback this function exists to stop.
+  const looksLikeFlag = (a) => a.startsWith("--") || (a.startsWith("-") && !/^-\d/.test(a));
+
   const inline = argv[index].split("=")[1];
-  const value = Number(inline ?? argv[index + 1]);
-  return Number.isFinite(value) && value >= 0 && value <= 100 ? value : 90;
+  const next = argv[index + 1];
+  const raw = inline ?? (next !== undefined && !looksLikeFlag(next) ? next : undefined);
+  if (raw === undefined || raw === "") return { value: GATE_DEFAULT };
+
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 100) return { invalid: raw };
+  return { value };
 }
 
 async function main(argv) {
@@ -102,6 +127,16 @@ async function main(argv) {
   if (argv[0] === "setup") {
     const { setup } = await import("./setup.mjs");
     return setup(argv.slice(1));
+  }
+
+  if (argv[0] === "doctor") {
+    const { diagnose, renderDoctor } = await import("./doctor.mjs");
+    const report = await diagnose();
+    process.stdout.write(has("--json") ? emit("doctor", report) : `\n${renderDoctor(report)}\n`);
+    // A diagnostic's job is to report, so a broken setup is still a successful
+    // run. It fails only when nothing at all could be read, which is the one
+    // case where the report itself has nothing to say.
+    return report.providers.some((p) => p.status === "ok") ? 0 : 1;
   }
 
   // Everything needed to invoke one agent, in one answer. Meant for a caller
@@ -164,7 +199,15 @@ async function main(argv) {
 
   // Multi-provider paths go through the registry, which isolates failures:
   // Antigravity needs its IDE open, a Codex token expires, gh may be absent.
-  const threshold = gateThreshold(argv);
+  const gate = gateThreshold(argv);
+  if (gate?.invalid !== undefined) {
+    process.stderr.write(
+      `agent-runway: --gate takes a number from 0 to 100, got "${gate.invalid}"\n`
+    );
+    return 1;
+  }
+  const threshold = gate ? gate.value : null;
+
   const provider = flagValue(argv, "--provider");
   if (threshold !== null || has("--all") || provider) {
     const { PROVIDER_IDS, readAll, capacity } = await import("./providers/index.mjs");

@@ -221,6 +221,41 @@ Windows in the Credential Manager, so that file is often absent or stale. Set
 `CLAUDE_ORG_ID` overrides the organization UUID, which is only needed by the
 claude.ai fallback endpoint.
 
+### When it does not work: `doctor`
+
+Five credential sources, two endpoints that take different credentials, and a
+cache that can serve a last-good reading add up to one recurring question — *it
+says no token, but I have one*. `doctor` answers it in one pass:
+
+```bash
+agent-runway doctor
+```
+
+```
+Claude credentials
+  Token       found - ~/.claude/.credentials.json
+              expired at 2026-09-12T18:11:42.397Z
+  Cookie      absent (~/.claude/session-cookie)
+  Org id      known
+  claude.ai   not offered - no cookie
+  Answered    no - AUTH
+              oauth/usage: HTTP 401 - OAuth access token has expired.
+
+Providers
+  claude      unreachable - Token rejected (source: ~/.claude/.credentials.json)
+  codex       ok [stale, 3m old] - serving a cached reading: chatgpt.com unreachable
+  copilot     ok
+```
+
+Two things it deliberately does. It **names sources, never values** — no token,
+no cookie, not even a prefix, so the output is safe to paste into an issue, and
+a test asserts that against a report built from planted credentials. And it
+marks a reading as `[stale]` when the registry served a cached answer after a
+live read failed: that fallback is right for a quota question and wrong for a
+diagnostic, where it would hide the failure being diagnosed.
+
+Exit 0 once anything could be read, 1 when nothing could.
+
 ## Two questions, one tool
 
 Before delegating work, an agent needs both halves of the answer, and getting
@@ -347,9 +382,20 @@ more than it claims:
   "decision": "defer",
   "rule": "all",
   "ruleText": "every readable provider is under the threshold",
-  "scoped": null
+  "scoped": null,
+  "unreadable": ["antigravity"]
 }
 ```
+
+`unreadable` is the rest of that sentence. A provider that could not be read is
+neither under the threshold nor over it — a closed Antigravity IDE is not a
+verdict on the machine — so it is left out of the rule and **named** instead.
+A `proceed` resting on three providers out of four says so.
+
+`--gate` refuses an input it cannot use: `--gate foo`, `--gate 150` and
+`--gate -1` exit 1 rather than quietly falling back to 90. On a command whose
+entire output is a decision, a guessed threshold answers a question nobody
+asked.
 
 The recommendation likewise states its own rule and whether the candidates were
 even comparable: 0% of a five-hour window is not 0% of a monthly allowance.
@@ -359,6 +405,7 @@ even comparable: 0% of a five-hour window is not 0% of a monthly allowance.
 | Flag | Output |
 | --- | --- |
 | *(none)* | Claude only, readable table |
+| `doctor` | Which credential won, which endpoint replied, what failed |
 | `--all` | Every provider found on this machine |
 | `--provider <id>` | One provider only — use it when asking about yourself |
 | `--models` | What each install accepts, and where installs disagree |
