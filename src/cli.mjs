@@ -11,7 +11,9 @@ each installed agent will actually accept.
 
 Usage:
   agent-runway [options]
-  agent-runway setup [--env] [--force]
+  agent-runway setup [--env] [--force] [--stdin]
+  agent-runway doctor [--json]
+  agent-runway resolve <agent> [--model <slug>] [--with-capacity] [--json]
 
 Commands:
   setup        Guided first-time setup: find a credential, check it against
@@ -20,9 +22,20 @@ Commands:
                --env    also export it from your shell profile, as the
                         variable that credential is actually read from
                --force  replace a credential that already works
+               --stdin  read the credential from a pipe instead of a prompt,
+                        so it is never displayed or pasted
   doctor       Why a provider is not answering: which credential source won,
                which endpoint replied, what each one said, cache ages. Prints
                no secret, so it is safe to paste into an issue.
+  resolve <agent>
+               Everything needed to start one agent correctly: the command to
+               spawn (not just a path - an npm-installed CLI cannot be spawned
+               from its path on Windows), the install it came from, its
+               version, and the model slugs it accepts.
+               --model <slug>    check a slug against it, and say which other
+                                 installs would accept it
+               --with-capacity   also ask whether that agent has room
+               Exit 1 when the agent cannot be resolved or the slug is refused.
 
 Options:
   --all           Every provider found on this machine, not just Claude

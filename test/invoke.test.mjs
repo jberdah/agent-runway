@@ -96,8 +96,23 @@ const trySpawn = (command, args) =>
     }, 25_000).unref?.();
   });
 
+test("every install has a descriptor, whatever kind it is", () => {
+  // Not just the ones on PATH. The desktop branch built its record by hand and
+  // forgot the field, so two Claude installs on this machine answered
+  // `invoke: null` - and `resolve` will choose a desktop build when no usable
+  // CLI is on PATH, which is exactly when a caller has no fallback.
+  //
+  // The first version of the test below filtered to kind === "path", so it
+  // could not have caught that. This one cannot miss a kind.
+  for (const install of discoverInstalls({ withVersions: false })) {
+    assert.ok(install.invoke, `${install.agent} (${install.kind}) has no invocation`);
+    assert.equal(typeof install.invoke.command, "string");
+    assert.ok(Array.isArray(install.invoke.args));
+  }
+});
+
 test("every install found on this machine can be started from its descriptor", async (t) => {
-  const installs = discoverInstalls({ withVersions: false }).filter((i) => i.kind === "path" && i.invoke);
+  const installs = discoverInstalls({ withVersions: false }).filter((i) => i.invoke);
 
   if (!installs.length) {
     // CI runners have none of these agents. The descriptor's logic is covered
@@ -109,8 +124,43 @@ test("every install found on this machine can be started from its descriptor", a
     const result = await trySpawn(install.invoke.command, [...install.invoke.args, "--version"]);
     assert.ok(
       result.ok,
-      `${install.agent}: spawning the descriptor failed (${result.why}) - ` +
+      `${install.agent} (${install.kind}): spawning the descriptor failed (${result.why}) - ` +
         `command=${path.basename(install.invoke.command)} via=${install.invoke.via}`
     );
   }
+});
+
+test("resolve carries the invocation into its alternatives too", async () => {
+  const { resolveAgent } = await import("../src/models.mjs");
+
+  const installs = discoverInstalls({ withVersions: false });
+  const agents = [...new Set(installs.map((i) => i.agent))];
+  const agent = agents.find((a) => installs.filter((i) => i.agent === a).length > 1);
+  if (!agent) return; // one install each here, nothing to compare
+
+  const answer = await resolveAgent(agent, { installs });
+
+  // The README's own example is a model the PATH build refuses and the VS Code
+  // build accepts. Saying where it works without saying how to start it there
+  // is half an answer, and 0.6.0 had just established that a path alone is not
+  // something you can spawn.
+  for (const alternative of answer.alternatives ?? []) {
+    if (alternative.error) continue;
+    assert.ok(alternative.invoke, `alternative ${alternative.kind} has no invocation`);
+  }
+});
+
+test("the help names the command the project is built around", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  // fileURLToPath, not pathname: stripping a leading slash is a Windows-only
+  // trick that would hand CI a relative path on Linux and macOS.
+  const cli = fileURLToPath(new URL("../src/cli.mjs", import.meta.url));
+  const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" }).stdout ?? "";
+
+  // resolve was absent from --help for four releases while the README, the
+  // skill and the npm description all described it as central.
+  assert.match(help, /resolve/, "--help does not mention resolve");
+  assert.match(help, /--stdin/, "--help does not mention setup --stdin");
+  assert.match(help, /doctor/);
 });

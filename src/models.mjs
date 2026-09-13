@@ -326,7 +326,14 @@ export async function resolveAgent(agent, { installs, model = null, capacity = n
     models: preferred?.models.map((m) => m.id) ?? [],
     alternatives: catalogues
       .filter((c) => c !== preferred)
-      .map((c) => ({ kind: c.kind, version: c.version, path: c.path, models: c.models.map((m) => m.id), error: c.error })),
+      .map((c) => ({
+        kind: c.kind,
+        version: c.version,
+        path: c.path,
+        invoke: c.invoke ?? null,
+        models: c.models.map((m) => m.id),
+        error: c.error,
+      })),
     capacity,
   };
 
@@ -336,7 +343,17 @@ export async function resolveAgent(agent, { installs, model = null, capacity = n
       requested: model,
       valid,
       // The useful half of a rejection: the same slug often works elsewhere.
-      availableIn: valid ? [] : whoCanRun(model, catalogues).map((c) => ({ kind: c.kind, version: c.version, path: c.path })),
+      // With the invocation: this is the list a caller acts on when the slug
+      // it wanted is refused here, and a path alone is not something you can
+      // start.
+      availableIn: valid
+        ? []
+        : whoCanRun(model, catalogues).map((c) => ({
+            kind: c.kind,
+            version: c.version,
+            path: c.path,
+            invoke: c.invoke ?? null,
+          })),
       // Never invent a substitute silently; offer one and let the caller decide.
       suggestion: valid ? null : answer.models[0] ?? null,
     };

@@ -314,6 +314,7 @@ function desktopInstalls(spec, home, platform, binaryName) {
     if (!fs.existsSync(file)) continue;
     found.push({
       path: file,
+      invoke: invocationFor({ path: file }, platform),
       // The directory is named for the version, so no probe is needed.
       version: /^\d+\.\d+\.\d+/.test(dir.name) ? dir.name : null,
       verified: (spec.verifiedOn ?? []).includes(platform),
@@ -397,6 +398,7 @@ export function discoverInstalls({
         label: spec.label,
         kind: "desktop",
         path: app.path,
+        invoke: app.invoke,
         version: app.version,
         layoutVerified: app.verified,
         fingerprint: fingerprint(app.path),
