@@ -38,10 +38,10 @@ export function toWindows(usage) {
   });
 }
 
-export async function read({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
+export async function read({ env = process.env, fetchImpl = globalThis.fetch, timeoutMs = 15000, signal } = {}) {
   let usage;
   try {
-    usage = await fetchUsage({ env, fetchImpl });
+    usage = await fetchUsage({ env, fetchImpl, timeoutMs, signal });
   } catch (error) {
     if (error instanceof UsageError) {
       const status =

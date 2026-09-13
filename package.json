@@ -1,6 +1,6 @@
 {
   "name": "agent-runway",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Reads the rate-limit quota left on the coding agents installed on your machine (Claude, Codex, GitHub Copilot, Antigravity): percent used of each window and when it resets. Also lists the model slugs each installed binary accepts. CLI, MCP server and Claude Code skill.",
   "type": "module",
   "license": "MIT",

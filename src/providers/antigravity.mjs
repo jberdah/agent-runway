@@ -9,9 +9,9 @@
 //
 // The header name is x-codeium-csrf-token; the product descends from Codeium.
 
-import { spawnSync } from "node:child_process";
-
+import { deadline } from "../core.mjs";
 import { fromRemainingFraction, makeWindow, ok, unavailable } from "./shared.mjs";
+import { run } from "./run.mjs";
 
 export const id = "antigravity";
 export const label = "Antigravity";
@@ -20,39 +20,40 @@ const IS_WINDOWS = process.platform === "win32";
 const METHOD = "/exa.language_server_pb.LanguageServerService/GetUserStatus";
 const PROC = "language_server";
 
-const run = (cmd, args, timeout) =>
-  spawnSync(cmd, args, { encoding: "utf-8", timeout, windowsHide: true });
-
 /** The CSRF token is an argument of the running server; read it from the process table. */
-function findCsrfToken(timeoutMs) {
-  const r = IS_WINDOWS
+async function findCsrfToken(timeoutMs, signal) {
+  const r = await (IS_WINDOWS
     ? run("powershell", ["-NoProfile", "-NonInteractive", "-Command",
-        `(Get-CimInstance Win32_Process -Filter "Name='${PROC}.exe'").CommandLine`], timeoutMs)
-    : run("ps", ["-eo", "args="], timeoutMs);
+        `(Get-CimInstance Win32_Process -Filter "Name='${PROC}.exe'").CommandLine`], { timeoutMs, signal })
+    : run("ps", ["-eo", "args="], { timeoutMs, signal }));
 
   const line = (r.stdout ?? "").split(/\r?\n/).find((l) => l.includes("--csrf_token")) ?? "";
   return line.match(/--csrf_token[= ]+(\S+)/)?.[1] ?? null;
 }
 
 /** The server listens on two loopback ports; only one speaks plain HTTP. */
-function findPorts(timeoutMs) {
+async function findPorts(timeoutMs, signal) {
   if (IS_WINDOWS) {
-    const r = run("powershell", ["-NoProfile", "-NonInteractive", "-Command",
+    const r = await run("powershell", ["-NoProfile", "-NonInteractive", "-Command",
       `Get-Process ${PROC} -ErrorAction SilentlyContinue | ForEach-Object { ` +
       `Get-NetTCPConnection -State Listen -OwningProcess $_.Id -ErrorAction SilentlyContinue } | ` +
-      `Select-Object -ExpandProperty LocalPort`], timeoutMs);
+      `Select-Object -ExpandProperty LocalPort`], { timeoutMs, signal });
     return [...new Set((r.stdout ?? "").split(/\r?\n/).map((l) => Number(l.trim())).filter(Boolean))];
   }
   // POSIX: lsof is the portable-enough option. Untested on macOS and Linux.
-  const r = run("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-c", PROC], timeoutMs);
+  const r = await run("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-c", PROC], { timeoutMs, signal });
   return [...new Set(
     [...(r.stdout ?? "").matchAll(/:(\d+)\s+\(LISTEN\)/g)].map((m) => Number(m[1]))
   )];
 }
 
-export async function read({ fetchImpl = globalThis.fetch, timeoutMs = 8000 } = {}) {
-  const csrf = findCsrfToken(timeoutMs);
-  const ports = findPorts(timeoutMs);
+export async function read({ fetchImpl = globalThis.fetch, timeoutMs = 8000, signal } = {}) {
+  // Both probes at once: they are independent, and each spawns a process that
+  // used to block the other - and everything else with it.
+  const [csrf, ports] = await Promise.all([
+    findCsrfToken(timeoutMs, signal),
+    findPorts(timeoutMs, signal),
+  ]);
 
   if (!csrf || !ports.length) {
     // Not "no quota left" — genuinely not knowable right now.
@@ -70,7 +71,7 @@ export async function read({ fetchImpl = globalThis.fetch, timeoutMs = 8000 } = 
           "x-codeium-csrf-token": csrf,
         },
         body: "{}",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: deadline(timeoutMs, signal),
       });
       if (!response.ok) continue; // the sibling port serves HTTPS and 400s here
       body = await response.json();

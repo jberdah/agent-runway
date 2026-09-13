@@ -312,3 +312,22 @@ test("a payload can never overwrite the envelope, whatever keys it carries", asy
   // against them rather than against someone's memory.
   assert.deepEqual(ENVELOPE_KEYS, ["tool", "toolVersion", "schemaVersion", "kind"]);
 });
+
+test("a deadline fires on our own limit or on the caller's cancellation", async () => {
+  const { deadline } = await import("../src/core.mjs");
+
+  // Its own bound, so a directly-called adapter cannot hang forever.
+  const own = deadline(50);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(own.aborted, true);
+
+  // And the caller's, so a whole read can be given up on at once.
+  const controller = new AbortController();
+  const combined = deadline(60_000, controller.signal);
+  assert.equal(combined.aborted, false);
+  controller.abort();
+  assert.equal(combined.aborted, true);
+
+  // A signal that has already fired must not open a long wait.
+  assert.equal(deadline(60_000, AbortSignal.abort()).aborted, true);
+});

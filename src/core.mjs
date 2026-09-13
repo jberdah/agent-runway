@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "0.3.3";
+export const VERSION = "0.4.0";
 
 /**
  * The shape of what this tool answers, versioned separately from the tool.
@@ -44,6 +44,28 @@ export function envelope(kind, payload) {
     schemaVersion: SCHEMA_VERSION,
     kind,
   };
+}
+
+/**
+ * A signal that fires on the caller's cancellation OR on our own deadline.
+ *
+ * Every outbound request needs both: a bound of its own so it cannot hang
+ * forever when called directly, and the caller's signal so a whole read can be
+ * given up on at once.
+ */
+export function deadline(timeoutMs, signal) {
+  const ownTimeout = AbortSignal.timeout(timeoutMs);
+  if (!signal) return ownTimeout;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([signal, ownTimeout]);
+
+  // AbortSignal.any arrived in Node 20.3. The declared floor is >=20, so the
+  // fallback is not decorative.
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal.aborted) abort();
+  else signal.addEventListener("abort", abort, { once: true });
+  ownTimeout.addEventListener("abort", abort, { once: true });
+  return controller.signal;
 }
 
 const USER_AGENT = `agent-runway/${VERSION} (+https://github.com/jberdah/agent-runway)`;
@@ -142,10 +164,11 @@ export function resolveOrgId(env = process.env) {
   return env.CLAUDE_ORG_ID || readCredentialsFile()?.organizationUuid || null;
 }
 
-async function request(url, authHeaders, fetchImpl) {
+async function request(url, authHeaders, fetchImpl, signal) {
   let response;
   try {
     response = await fetchImpl(url, {
+      signal,
       headers: {
         ...authHeaders,
         Accept: "application/json",
@@ -252,7 +275,12 @@ const NO_CREDENTIAL_HINT =
  *
  * @returns {Promise<{windows: Array, extraUsage: object|null, endpoint: string, credentialSource: string, raw: object}>}
  */
-export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
+export async function fetchUsage({
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = 15000,
+  signal,
+} = {}) {
   const token = resolveToken(env);
   const cookie = resolveCookie(env);
   const orgId = resolveOrgId(env);
@@ -300,7 +328,8 @@ export async function fetchUsage({ env = process.env, fetchImpl = globalThis.fet
   for (const endpoint of endpoints) {
     let result;
     try {
-      result = await request(endpoint.url, endpoint.headers, fetchImpl);
+      // Each endpoint gets its own deadline, and both answer to the caller.
+      result = await request(endpoint.url, endpoint.headers, fetchImpl, deadline(timeoutMs, signal));
     } catch (error) {
       // A fallback that cannot be reached must not bury what the primary
       // endpoint already answered. Record it and keep going; the verdict is

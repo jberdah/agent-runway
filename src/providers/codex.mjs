@@ -9,6 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { deadline } from "../core.mjs";
 import { fromUsedPercent, makeWindow, ok, unavailable } from "./shared.mjs";
 
 export const id = "codex";
@@ -36,6 +37,7 @@ export async function read({
   home = os.homedir(),
   fetchImpl = globalThis.fetch,
   timeoutMs = 10000,
+  signal,
 } = {}) {
   const auth = readAuth(home);
   if (!auth) {
@@ -53,7 +55,7 @@ export async function read({
         // instead of JSON. Found the hard way.
         "User-Agent": "agent-runway",
       },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: deadline(timeoutMs, signal),
     });
   } catch (error) {
     return unavailable(id, "unreachable", `chatgpt.com unreachable: ${error?.message ?? error}`);

@@ -462,3 +462,70 @@ test("a stale provider is never recommended over a live one", () => {
   assert.equal(decision.recommended.provider, "claude");
   assert.deepEqual(decision.overall.unreadable, ["codex"]);
 });
+
+// --------------------------------------------------- the timeout that cancels
+
+const { ADAPTERS } = await import("../src/providers/index.mjs");
+
+test("the hard timeout cancels the adapter rather than abandoning it", async () => {
+  let received = null;
+  let cancelled = false;
+
+  // An adapter that would take half a minute, and that honours its signal.
+  ADAPTERS.slowtest = {
+    label: "Slow test",
+    read: async ({ signal }) => {
+      received = signal;
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 30_000);
+        signal?.addEventListener(
+          "abort",
+          () => {
+            cancelled = true;
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true }
+        );
+      });
+      return { provider: "slowtest", status: "ok", plan: null, allowed: null, windows: [], detail: null };
+    },
+  };
+
+  try {
+    const started = Date.now();
+    const [result] = await readAll({ ...NO_CACHE, providers: ["slowtest"], hardTimeoutMs: 200 });
+    const elapsed = Date.now() - started;
+
+    assert.ok(received, "the adapter is handed a signal to honour");
+    assert.equal(cancelled, true, "the timeout aborted the work, it did not merely stop waiting for it");
+    assert.equal(result.status, "unreachable");
+    assert.ok(elapsed < 5000, `returned in ${elapsed}ms`);
+  } finally {
+    delete ADAPTERS.slowtest;
+  }
+});
+
+test("an answer that arrives in time still releases whatever is left running", async () => {
+  let cancelled = false;
+
+  // Answers immediately, then keeps something pending - Antigravity does this
+  // for real, still trying a second port after the first one replied.
+  ADAPTERS.leaky = {
+    label: "Leaky",
+    read: async ({ signal }) => {
+      signal?.addEventListener("abort", () => {
+        cancelled = true;
+      }, { once: true });
+      return { provider: "leaky", status: "ok", plan: null, allowed: null, windows: [], detail: null };
+    },
+  };
+
+  try {
+    const [result] = await readAll({ ...NO_CACHE, providers: ["leaky"], hardTimeoutMs: 10_000 });
+    assert.equal(result.status, "ok");
+    assert.equal(cancelled, true, "success aborts too, so nothing is left holding a socket");
+  } finally {
+    delete ADAPTERS.leaky;
+  }
+});

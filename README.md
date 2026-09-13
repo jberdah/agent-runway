@@ -529,6 +529,30 @@ object rather than two.
   cookies or an OS keychain.
 - Read-only: every request is a `GET`.
 
+## Reads are concurrent, and can be given up on
+
+Two providers need an external process — Copilot shells out to `gh`, Antigravity
+reads the process table and listening sockets to find a port and CSRF token that
+change on every launch of the IDE. Both used `spawnSync`, which blocks the
+thread until the child exits. So the "parallel" read was not parallel, and the
+20-second guard could never fire: a timer cannot run while the thread is frozen.
+
+Measured on one machine, before and after:
+
+| | reading four providers | longest freeze |
+| --- | --- | --- |
+| before | 16.7 s | **16.4 s** |
+| after | 8.5 s | 0.4 s |
+
+Antigravity is still the slow one at ~8 s — PowerShell is not quick — but it now
+waits alongside the others instead of stopping them.
+
+With nothing blocking, the timeout can do what it claimed: an `AbortController`
+tears down the fetch and kills the spawned process, rather than returning while
+the work carries on in the background. A read that answers after its deadline is
+discarded, because a cancelled read can be holding a partial payload and `ok` is
+the one answer that would be acted on.
+
 ## How it works
 
 Two internal endpoints, each taking a **different** credential, and each offered

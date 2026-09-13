@@ -1,4 +1,4 @@
-// GitHub Copilot, through the GitHub CLI's stored credentials.
+// GitHub Copilot, through the GitHub CLI stored credentials.
 //
 // Different model from the other three: a monthly allowance of requests rather
 // than rolling time windows, reported as a percentage REMAINING plus raw
@@ -6,9 +6,8 @@
 // premium_interactions reads 0 of 0, which a naive percentage call "exhausted"
 // when it actually means "not included in this plan".
 
-import { spawnSync } from "node:child_process";
-
 import { fromCounts, fromRemainingPercent, makeWindow, ok, unavailable } from "./shared.mjs";
+import { run } from "./run.mjs";
 
 export const id = "copilot";
 export const label = "GitHub Copilot";
@@ -22,15 +21,24 @@ const LABELS = {
 };
 
 /** `gh` holds the token; shelling out avoids ever touching it ourselves. */
-function ghApi(endpoint, timeoutMs) {
-  const base = { encoding: "utf-8", timeout: timeoutMs, windowsHide: true };
+async function ghApi(endpoint, timeoutMs, signal) {
+  // Windows goes through a shell because `gh` is usually a .cmd shim, which
+  // spawn cannot execute directly.
   const r = IS_WINDOWS
-    ? spawnSync(`gh api ${endpoint}`, { ...base, shell: true })
-    : spawnSync("gh", ["api", endpoint], base);
+    ? await run(`gh api ${endpoint}`, [], { timeoutMs, signal, shell: true })
+    : await run("gh", ["api", endpoint], { timeoutMs, signal });
 
   if (r.error) return { ok: false, reason: r.error.code === "ENOENT" ? "not_installed" : "error" };
+  if (r.aborted) return { ok: false, reason: "unreachable", detail: "cancelled" };
+  if (r.timedOut) return { ok: false, reason: "unreachable", detail: `gh did not answer within ${timeoutMs / 1000}s` };
+
   if (r.status !== 0) {
     const err = (r.stderr ?? "").toLowerCase();
+    // Through a shell a missing binary is a non-zero exit with a message,
+    // never ENOENT, so the Windows path would otherwise report "error".
+    if (err.includes("not recognized") || err.includes("not found")) {
+      return { ok: false, reason: "not_installed" };
+    }
     if (err.includes("auth") || err.includes("401")) return { ok: false, reason: "no_credentials" };
     return { ok: false, reason: "unreachable", detail: (r.stderr ?? "").trim().slice(0, 120) };
   }
@@ -41,8 +49,9 @@ function ghApi(endpoint, timeoutMs) {
   }
 }
 
-export async function read({ timeoutMs = 15000, gh = ghApi } = {}) {
-  const result = gh("copilot_internal/user", timeoutMs);
+export async function read({ timeoutMs = 15000, signal, gh = ghApi } = {}) {
+  // Awaited even when a test injects a synchronous stub.
+  const result = await gh("copilot_internal/user", timeoutMs, signal);
   if (!result.ok) {
     const hint = {
       not_installed: "the GitHub CLI is not installed",

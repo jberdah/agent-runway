@@ -33,18 +33,43 @@ async function readOne(name, options) {
   }
 
   const started = Date.now();
+  const limitMs = options.hardTimeoutMs ?? HARD_TIMEOUT_MS;
+
+  // The timeout used to be a race and nothing more: it let readOne return while
+  // the adapter carried on in the background, holding a socket or a child
+  // process. The controller makes it a real cancellation — the fetch is torn
+  // down, the spawned process is killed — and the race stays as a backstop, so
+  // that an adapter which ignored its signal could still never hang the caller.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, limitMs);
+  timer.unref?.();
+
   const guard = new Promise((resolve) =>
-    setTimeout(
-      () => resolve(unavailable(name, "unreachable", `no answer within ${HARD_TIMEOUT_MS / 1000}s`)),
-      options.hardTimeoutMs ?? HARD_TIMEOUT_MS
-    ).unref?.()
+    setTimeout(() => resolve(unavailable(name, "unreachable", `no answer within ${limitMs / 1000}s`)), limitMs).unref?.()
   );
 
   let result;
   try {
-    result = await Promise.race([adapter.read(options), guard]);
+    result = await Promise.race([adapter.read({ ...options, signal: controller.signal }), guard]);
   } catch (error) {
     result = unavailable(name, "error", String(error?.message ?? error));
+  } finally {
+    clearTimeout(timer);
+    // Also on success: an adapter may still be trying a second port or a
+    // fallback endpoint, and the answer is already in hand.
+    controller.abort();
+  }
+
+  // Once the deadline has passed we have given up, and an adapter that answers
+  // on its way out must not be believed: aborting a read mid-flight can leave
+  // it holding a partial payload, and "ok" from a cancelled read is the one
+  // answer that would be acted on.
+  if (timedOut) {
+    result = unavailable(name, "unreachable", `no answer within ${limitMs / 1000}s`);
   }
 
   const enriched = { ...result, label: adapter.label ?? name, latencyMs: Date.now() - started };
