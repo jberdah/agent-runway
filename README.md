@@ -1,9 +1,14 @@
 # agent-runway
 
-How much runway is left before your coding agent hits a rate limit — which
-windows are consumed, and when each one resets.
+Reads three things about the coding agents installed on your machine:
 
-Same answer three ways: a **CLI**, a **Claude Code skill**, and an **MCP tool**
+- **how much rate-limit quota is left** — percent used of every window, and when
+  each one resets
+- **which model slugs each installed binary accepts** — they disagree, and a
+  spawn with the wrong one fails
+- **whether there is room to start work now** — proceed, defer or unknown
+
+Same answers three ways: a **CLI**, a **Claude Code skill**, and an **MCP tool**
 any client can call, so the reasoning happens once instead of in every model.
 
 > **Unofficial.** This reads undocumented Anthropic endpoints. It can stop

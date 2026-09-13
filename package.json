@@ -1,7 +1,7 @@
 {
   "name": "agent-runway",
-  "version": "0.3.2",
-  "description": "Quota and model discovery for the coding agents installed on this machine: how much runway each has left, and which model slugs each binary will actually accept.",
+  "version": "0.3.3",
+  "description": "Reads the rate-limit quota left on the coding agents installed on your machine (Claude, Codex, GitHub Copilot, Antigravity): percent used of each window and when it resets. Also lists the model slugs each installed binary accepts. CLI, MCP server and Claude Code skill.",
   "type": "module",
   "license": "MIT",
   "author": "jberdah (https://github.com/jberdah)",
@@ -41,10 +41,14 @@
   "keywords": [
     "claude",
     "claude-code",
+    "codex",
+    "github-copilot",
+    "gemini",
     "mcp",
     "usage",
     "rate-limit",
-    "quota"
+    "quota",
+    "cli"
   ],
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0"
