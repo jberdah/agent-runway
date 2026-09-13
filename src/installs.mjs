@@ -141,6 +141,56 @@ function onPath(binary) {
 }
 
 /**
+ * How to actually start this program: a command and its arguments, spawnable
+ * with no shell.
+ *
+ * A path is not an answer. Measured on Windows, of the four agents this tool
+ * resolves, two cannot be spawned from the path it reports:
+ *
+ *   claude   claude.exe        spawns
+ *   codex    codex.exe         spawns
+ *   copilot  npm-loader.js     EFTYPE
+ *   gemini   gemini.js         EFTYPE
+ *
+ * The `.cmd` launcher npm installs alongside them is no better: Node refuses to
+ * spawn a .bat or .cmd without a shell since the fix for CVE-2024-27980, so it
+ * raises EINVAL. `resolve` was handing callers a path that throws, while the
+ * tool itself quietly used `shell: true` to run the very same program.
+ *
+ * `shell: true` is not the fix either. It concatenates arguments into one
+ * string rather than passing an argv array — Node deprecated that for exactly
+ * the reason it sounds like — and on Windows it masks a missing binary, because
+ * cmd.exe starts successfully and exits 1. brainclaw had to write a sentinel
+ * file to tell "agent absent" from "agent failed"; a caller given a command
+ * that spawns directly needs no such thing.
+ *
+ * So: run a .js through this Node, a .cmd through an explicit cmd.exe with an
+ * argv array, and anything natively executable directly.
+ */
+export function invocationFor({ path: file, launcher = null }, platform = process.platform) {
+  const describe = (target) => {
+    const ext = (target.match(/\.[^.\\/]+$/) ?? [""])[0].toLowerCase();
+
+    if (ext === ".js" || ext === ".mjs" || ext === ".cjs") {
+      return { command: process.execPath, args: [target], via: "node" };
+    }
+    if (platform === "win32" && (ext === ".cmd" || ext === ".bat")) {
+      // /d skips AutoRun, /s keeps the quoting rules predictable, /c runs and
+      // exits. Arguments stay an array: nothing is concatenated or escaped.
+      const comspec = process.env.ComSpec?.trim() || "cmd.exe";
+      return { command: comspec, args: ["/d", "/s", "/c", target], via: "cmd" };
+    }
+    return { command: target, args: [], via: "direct" };
+  };
+
+  const primary = describe(file);
+  // A program we cannot start directly, but with a launcher beside it: prefer
+  // whichever needs no shell. `node <file>` beats cmd.exe when both would work.
+  if (primary.via === "direct" || primary.via === "node") return primary;
+  return launcher ? describe(launcher) : primary;
+}
+
+/**
  * PATH usually hands back an npm shim, not the program.
  *
  * `where claude` returns a 308-byte shell script; the binary it launches is
@@ -372,6 +422,7 @@ export function discoverInstalls({
         kind: "path",
         path: real,
         launcher: real === shim ? null : shim,
+        invoke: invocationFor({ path: real, launcher: real === shim ? null : shim }, platform),
         version: withVersions ? versionOf(real, { launcher: shim }) : null,
         fingerprint: fingerprint(real),
       });
@@ -389,6 +440,7 @@ export function discoverInstalls({
         label: spec.label,
         kind: "vscode",
         path: binary ?? dir,
+        invoke: binary ? invocationFor({ path: binary }, platform) : null,
         // Free: the extension folder carries a version, and Codex's manifest
         // carries the more precise one for the binary it actually ships.
         version: codex?.version ?? version,

@@ -331,3 +331,23 @@ test("a deadline fires on our own limit or on the caller's cancellation", async 
   // A signal that has already fired must not open a long wait.
   assert.equal(deadline(60_000, AbortSignal.abort()).aborted, true);
 });
+
+test("the three files that describe this package say the same thing", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const read = (rel) => JSON.parse(readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8"));
+
+  // Three hand-maintained copies of one sentence. They drifted the first time
+  // something changed: 0.5.0 removed Antigravity from the code and the README
+  // and left all three still advertising it to npm and to the Claude plugin
+  // marketplace. The version numbers already have a test like this one; the
+  // description needed the same.
+  const pkg = read("../package.json").description;
+  assert.equal(read("../.claude-plugin/plugin.json").description, pkg, "plugin.json");
+  assert.equal(read("../.claude-plugin/marketplace.json").plugins[0].description, pkg, "marketplace.json");
+
+  // And the sentence has to name what is actually covered.
+  const { PROVIDER_IDS } = await import("../src/providers/index.mjs");
+  assert.ok(!/antigravity/i.test(pkg), "the description still advertises a provider that was removed");
+  assert.equal(PROVIDER_IDS.length, 3, "PROVIDER_IDS changed - check the description still matches");
+});

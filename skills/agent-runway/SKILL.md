@@ -120,10 +120,16 @@ name the install an answer came from.
 agent-runway resolve codex --model gpt-6-astra --json
 ```
 
-It returns the binary to invoke, its version, the slugs it accepts, and for a
+It returns the command to run, its version, the slugs it accepts, and for a
 requested model: whether it is valid, which other installs would accept it, and
 a suggested substitute. Exit 1 when the agent cannot be resolved or the slug is
 refused, so a script can branch on it.
+
+**Spawn `invoke.command` with `invoke.args`, not `binary`.** `binary` names the
+program; `invoke` starts it, and for anything npm-installed on Windows the two
+differ — spawning the path directly raises EFTYPE. Never wrap it in a shell:
+the descriptor is built so none is needed, and a shell hides a missing binary
+behind a generic exit 1.
 
 **Offer the substitute, never apply it silently.** Running a different model
 than the user asked for, without saying so, is worse than failing.

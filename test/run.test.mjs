@@ -89,23 +89,29 @@ test("waiting on a child does not freeze everything else", async () => {
   assert.ok(beats > 5, `only ${beats} timer ticks while a child ran for a second`);
 });
 
-test("two commands actually overlap", async () => {
-  // Asserted by when the children ran, not by wall clock: a timing bound is
-  // flaky on a loaded machine, and the whole suite runs its files at once.
-  // Each child reports the moment it starts and the moment it finishes.
-  const child = () =>
-    run(
-      process.execPath,
-      ["-e", "process.stdout.write(Date.now() + \" \"); setTimeout(() => process.stdout.write(String(Date.now())), 400)"],
-      { timeoutMs: 20_000 }
+test("a second command starts before the first has finished", async () => {
+  // The spawnSync regression, stated as something this code controls.
+  //
+  // Two earlier versions of this test compared wall-clock durations, then
+  // compared the children's own start and end times. Both passed alone and
+  // failed inside the full suite — they were measuring how the OS schedules
+  // process creation on a loaded machine, which is not the claim. Whether both
+  // calls return to the event loop before either child exits IS the claim, and
+  // it does not depend on load.
+  const order = [];
+  const child = (tag) =>
+    run(process.execPath, ["-e", "setTimeout(() => {}, 300)"], { timeoutMs: 20_000 }).then(() =>
+      order.push(tag)
     );
 
-  const [a, b] = await Promise.all([child(), child()]);
-  const span = (r) => r.stdout.trim().split(" ").map(Number);
-  const [startA, endA] = span(a);
-  const [startB, endB] = span(b);
+  const a = child("first");
+  const b = child("second");
+  order.push("both launched");
 
-  assert.ok(Number.isFinite(startA) && Number.isFinite(endB), "both children reported their span");
-  // Serialised, one span would end before the other began.
-  assert.ok(startA < endB && startB < endA, "the two children did not overlap in time");
+  await Promise.all([a, b]);
+
+  // Under spawnSync the first child would have run to completion inside the
+  // first call, so "first" would sit ahead of this line.
+  assert.equal(order[0], "both launched", `both calls must return before either child exits, got ${order}`);
+  assert.equal(order.length, 3);
 });

@@ -19,12 +19,12 @@ import fs from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 
 import * as cache from "./cache.mjs";
-import { fingerprint } from "./installs.mjs";
+import { fingerprint, invocationFor } from "./installs.mjs";
 
 const IS_WINDOWS = process.platform === "win32";
 
-/** What to actually execute: the launcher when there is one, else the program. */
-const invocable = (install) => install.launcher ?? install.path;
+/** The install's own descriptor, or one derived on the spot for a bare path. */
+const invocationOf = (install) => install.invoke ?? invocationFor(install);
 
 // ------------------------------------------------------------------- codex
 
@@ -32,11 +32,11 @@ const invocable = (install) => install.launcher ?? install.path;
  * Codex documents its own protocol (`codex app-server generate-json-schema`)
  * and answers `model/list` over stdio. The most honest source of the three.
  */
-function codexModels(binary, timeoutMs = 45000) {
+function codexModels(invoke, timeoutMs = 45000) {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, ["app-server"], { windowsHide: true });
+      child = spawn(invoke.command, [...invoke.args, "app-server"], { windowsHide: true });
     } catch (error) {
       return resolve({ error: String(error?.message ?? error) });
     }
@@ -106,10 +106,15 @@ function codexModels(binary, timeoutMs = 45000) {
  * The Copilot CLI has no list command, but its shell completion enumerates the
  * values `--model` accepts, which is the same thing said differently.
  */
-function copilotModels(binary, timeoutMs = 30000) {
-  const result = IS_WINDOWS
-    ? spawnSync(`"${binary}" completion bash`, { encoding: "utf-8", windowsHide: true, timeout: timeoutMs, shell: true })
-    : spawnSync(binary, ["completion", "bash"], { encoding: "utf-8", windowsHide: true, timeout: timeoutMs });
+function copilotModels(invoke, timeoutMs = 30000) {
+  // Through the invocation descriptor, with no shell. This used to be
+  // `shell: true` on a quoted path - which worked, and meant the tool knew how
+  // to start a program it was telling callers to start differently.
+  const result = spawnSync(invoke.command, [...invoke.args, "completion", "bash"], {
+    encoding: "utf-8",
+    windowsHide: true,
+    timeout: timeoutMs,
+  });
 
   if (result.error) return { error: String(result.error.message) };
   if (result.status !== 0) return { error: `completion exited ${result.status}` };
@@ -162,8 +167,10 @@ const geminiModels = (binary) =>
   scanBinary(binary, /gemini-[0-9][0-9a-z.-]{0,18}/g);
 
 const READERS = {
-  codex: { authority: "declared", read: (install) => codexModels(install.path) },
-  copilot: { authority: "declared", read: (install) => copilotModels(invocable(install)) },
+  codex: { authority: "declared", read: (install) => codexModels(invocationOf(install)) },
+  copilot: { authority: "declared", read: (install) => copilotModels(invocationOf(install)) },
+  // These two read the file's bytes rather than running it, so they take the
+  // path and not the invocation.
   claude: { authority: "inferred", read: (install) => claudeModels(install.path) },
   gemini: { authority: "inferred", read: (install) => geminiModels(install.path) },
 };
@@ -181,6 +188,10 @@ export async function modelsFor(install, { useCache = true } = {}) {
     kind: install.kind,
     version: install.version,
     path: install.path,
+    // Carried through rather than recomputed: `resolve` promises a caller the
+    // command to run, and dropping it here is how it came to promise a path
+    // that throws EFTYPE instead.
+    invoke: install.invoke ?? null,
     authority: reader?.authority ?? null,
   };
 
@@ -307,6 +318,9 @@ export async function resolveAgent(agent, { installs, model = null, capacity = n
     agent,
     resolved: Boolean(preferred),
     binary: preferred?.path ?? null,
+    // What to spawn. `binary` names the program; this starts it. On Windows the
+    // two differ for anything npm installed, and only this one works.
+    invoke: preferred?.invoke ?? null,
     version: preferred?.version ?? null,
     authority: preferred?.authority ?? null,
     models: preferred?.models.map((m) => m.id) ?? [],

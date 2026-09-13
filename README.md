@@ -368,6 +368,7 @@ agent-runway resolve codex --model gpt-6-astra
   "schemaVersion": 1,
   "kind": "resolve",
   "binary": "…/OpenAI/Codex/bin/codex.exe",
+  "invoke": { "command": "…/OpenAI/Codex/bin/codex.exe", "args": [], "via": "direct" },
   "version": "0.149.1",
   "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"],
   "model": {
@@ -385,6 +386,36 @@ than was asked for, silently, is worse than failing.
 
 This is meant to compose with tools that already know how to build command
 lines. It deliberately does not spawn anything.
+
+
+### A path is not a command
+
+`binary` names the program. **`invoke` starts it**, and on Windows the two are
+different for anything installed through npm:
+
+| agent | `binary` | spawning it | `invoke.via` |
+| --- | --- | --- | --- |
+| claude | `claude.exe` | works | `direct` |
+| codex | `codex.exe` | works | `direct` |
+| copilot | `npm-loader.js` | **EFTYPE** | `node` |
+| gemini | `gemini.js` | **EFTYPE** | `node` |
+
+The `.cmd` launcher npm puts beside them is no better: Node has refused to spawn
+a `.bat` or `.cmd` without a shell since the fix for CVE-2024-27980, and answers
+EINVAL. So for half the agents it resolves, this command was handing back a path
+that throws — while using `shell: true` internally to run that very program.
+
+```js
+const { invoke } = JSON.parse(execSync("agent-runway resolve copilot --json"));
+spawn(invoke.command, [...invoke.args, "--model", slug, prompt]);
+```
+
+No shell. That matters for more than tidiness: `shell: true` concatenates
+arguments into one string instead of passing an argv array — Node deprecated it
+for the reason that sounds like — and on Windows it hides a missing binary,
+because `cmd.exe` starts fine and exits 1. brainclaw had to write a sentinel
+file to tell "agent absent" from "agent failed"; a command that spawns directly
+needs no such thing.
 
 ## Deciding, rather than reporting
 
