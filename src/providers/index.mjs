@@ -135,6 +135,50 @@ export function capacity(results, { threshold = 90, rule = "all" } = {}) {
       return { provider: r.provider, label: r.label, decision: "unknown", reason: "no_readable_window" };
     }
 
+    // A reading served from cache after a live read failed cannot support
+    // "proceed" — but it can still support "defer", and the difference matters.
+    //
+    // Consumption only rises inside a window. So a stale 94% is still at least
+    // 94%: the constraint it reports is real, and answering "unknown" there
+    // would throw away an actionable defer complete with a reset time. A stale
+    // 15% proves nothing about now — the window may have filled while the
+    // provider was unreachable, which is often exactly why it was unreachable.
+    //
+    // The one case where even defer is unfounded: the window this reading
+    // describes has since reset, so the number belongs to a window that no
+    // longer exists.
+    if (r.stale) {
+      const reset = binding.resetsAt ? Date.parse(binding.resetsAt) : NaN;
+      const windowGone = Number.isFinite(reset) && reset <= Date.now();
+      const blocked = r.allowed === false || binding.percentUsed >= threshold;
+
+      if (windowGone || !blocked) {
+        return {
+          provider: r.provider,
+          label: r.label,
+          decision: "unknown",
+          reason: windowGone ? "stale_window_already_reset" : "stale_cannot_show_room",
+          detail: r.detail,
+          binding,
+          windows: r.windows,
+          stale: true,
+          staleMs: r.ageMs ?? null,
+        };
+      }
+      return {
+        provider: r.provider,
+        label: r.label,
+        decision: "defer",
+        reason: r.allowed === false ? "provider_says_limit_reached" : "threshold_exceeded",
+        binding,
+        windows: r.windows,
+        retryAt: binding.resetsAt,
+        retryAtBasis: "window_reset",
+        stale: true,
+        staleMs: r.ageMs ?? null,
+      };
+    }
+
     // Codex states outright whether it will serve a request; that beats a
     // percentage we interpreted ourselves.
     if (r.allowed === false) {

@@ -355,3 +355,110 @@ test("capacity carries every window, not only the binding one", () => {
   assert.equal(only.windows.length, 2);
   assert.deepEqual(only.windows.map((w) => w.kind), ["session", "weekly"]);
 });
+
+// ------------------------------------------- a cached reading after a failure
+
+const stale = (provider, windows, ageMs = 59 * 60_000, extra = {}) =>
+  reading(provider, windows, { stale: true, ageMs, detail: "serving a cached reading", ...extra });
+
+test("a stale reading can never produce proceed", () => {
+  // The scenario: read at 15% at 10:00, provider unreachable at 11:00, and by
+  // then it is actually at 94%. The gate used to answer proceed from an
+  // hour-old number, which is the one answer it must never give from data it
+  // knows to be out of date.
+  const decision = capacity(
+    [
+      stale("codex", [
+        makeWindow({
+          kind: "session",
+          percentUsed: 15,
+          windowSeconds: 18000,
+          resetsAt: new Date(Date.now() + 3600_000).toISOString(),
+        }),
+      ]),
+    ],
+    { threshold: 90 }
+  );
+
+  const [only] = decision.providers;
+  assert.equal(only.decision, "unknown");
+  assert.equal(only.reason, "stale_cannot_show_room");
+  assert.equal(only.staleMs, 59 * 60_000, "how far out of date it is travels with the answer");
+  assert.equal(decision.overall.decision, "unknown");
+});
+
+test("a stale reading over the threshold still defers, and says when to retry", () => {
+  // Deliberately NOT unknown. Consumption only rises inside a window, so an
+  // hour-old 94% is still at least 94%: the constraint is real and the reset
+  // time is actionable. Downgrading it to unknown would discard a true answer
+  // in the name of caution.
+  const resetsAt = new Date(Date.now() + 3600_000).toISOString();
+  const decision = capacity(
+    [stale("codex", [makeWindow({ kind: "session", percentUsed: 94, windowSeconds: 18000, resetsAt })])],
+    { threshold: 90 }
+  );
+
+  const [only] = decision.providers;
+  assert.equal(only.decision, "defer");
+  assert.equal(only.stale, true, "still labelled, so a caller knows what it rests on");
+  assert.equal(only.retryAt, resetsAt);
+  assert.equal(only.retryAtBasis, "window_reset");
+});
+
+test("a stale reading whose window has since reset is unknown, not a defer", () => {
+  // The number describes a window that no longer exists, so even the "it can
+  // only have gone up" argument does not hold: it may well be at zero.
+  const decision = capacity(
+    [
+      stale(
+        "codex",
+        [
+          makeWindow({
+            kind: "session",
+            percentUsed: 94,
+            windowSeconds: 18000,
+            resetsAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        ],
+        6 * 3600_000
+      ),
+    ],
+    { threshold: 90 }
+  );
+
+  const [only] = decision.providers;
+  assert.equal(only.decision, "unknown");
+  assert.equal(only.reason, "stale_window_already_reset");
+});
+
+test("a provider's own limit flag still counts when the reading is stale", () => {
+  const decision = capacity(
+    [
+      stale(
+        "codex",
+        [makeWindow({ kind: "session", percentUsed: 4, resetsAt: new Date(Date.now() + 600_000).toISOString() })],
+        5 * 60_000,
+        { allowed: false }
+      ),
+    ],
+    { threshold: 90 }
+  );
+
+  const [only] = decision.providers;
+  assert.equal(only.decision, "defer", "the provider said no, and that does not expire upward");
+  assert.equal(only.reason, "provider_says_limit_reached");
+});
+
+test("a stale provider is never recommended over a live one", () => {
+  const decision = capacity(
+    [
+      stale("codex", [makeWindow({ kind: "session", percentUsed: 2, windowSeconds: 18000 })]),
+      reading("claude", [makeWindow({ kind: "session", percentUsed: 40, windowSeconds: 18000 })]),
+    ],
+    { threshold: 90 }
+  );
+
+  // codex looks better on paper and cannot be vouched for.
+  assert.equal(decision.recommended.provider, "claude");
+  assert.deepEqual(decision.overall.unreadable, ["codex"]);
+});

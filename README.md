@@ -355,7 +355,8 @@ agent-runway resolve codex --model gpt-6-astra
 
 ```jsonc
 {
-  "contract": 1,
+  "schemaVersion": 1,
+  "kind": "resolve",
   "binary": "…/OpenAI/Codex/bin/codex.exe",
   "version": "0.149.1",
   "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"],
@@ -422,6 +423,27 @@ A `proceed` resting on three providers out of four says so.
 entire output is a decision, a guessed threshold answers a question nobody
 asked.
 
+### A stale reading can defer, never proceed
+
+When a provider fails a live read, the registry serves its last good answer
+rather than nothing — a five-hour window read a minute ago still says more than
+silence. For a *report* that is right. For a *decision* it was dangerous: a
+reading taken at 15% an hour before the provider went unreachable produced
+`proceed`, while the account may well have been at 94% by then.
+
+The rule is asymmetric, because consumption is:
+
+| Stale reading | Decision | Why |
+| --- | --- | --- |
+| at or over the threshold | `defer` | consumption only rises inside a window, so an old 94% is still **at least** 94% — a real constraint, with a real reset time |
+| under the threshold | `unknown` | it proves nothing about now; the window may have filled while the provider was unreachable |
+| window has since reset | `unknown` | the number describes a window that no longer exists |
+
+So a stale answer is never treated as room to work, and is still allowed to
+prove a limit. Downgrading everything to `unknown` would have been simpler and
+worse: it throws away an actionable defer in the name of caution. Every stale
+decision carries `stale: true` and `staleMs`.
+
 ### No recommendation it cannot justify
 
 0% of a five-hour window is not 0% of a monthly allowance, so when the providers
@@ -465,7 +487,7 @@ Everything printed under `--json` declares which question it answers, so a
 parser never has to know what was asked to read the answer:
 
 ```json
-{ "tool": "agent-runway", "toolVersion": "0.3.1", "schemaVersion": 1, "kind": "capacity" }
+{ "tool": "agent-runway", "toolVersion": "0.3.2", "schemaVersion": 1, "kind": "capacity" }
 ```
 
 | `kind` | Produced by |

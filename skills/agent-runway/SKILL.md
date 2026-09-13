@@ -80,6 +80,11 @@ rather than implying it is at zero or unknown-but-checkable.
 - A `proceed` can rest on fewer providers than you think. `overall.unreadable`
   names the ones that could not be read at all; mention them rather than
   presenting the answer as covering everything installed.
+- **A decision marked `stale: true` rests on a cached reading**, because the
+  provider could not be reached just now. A stale answer is never `proceed`: it
+  can only be `defer` (consumption only rises inside a window, so an old high
+  reading still proves the limit) or `unknown`. When you report one, say how old
+  it is — `staleMs` — rather than presenting it as current.
 - **`recommended: null` is an answer, not a gap.** It means the providers with
   room run on different cadences and cannot be ranked against each other. Read
   `candidates` — one per cadence — and pick by which window the work will

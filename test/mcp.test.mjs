@@ -176,3 +176,21 @@ test("diagnose_setup answers with the doctor envelope and no credential", async 
   assert.ok(!whole.includes(COOKIE), "the MCP reply leaks a credential");
   assert.ok(!whole.includes(COOKIE.slice(0, 20)), "a credential prefix survives in the MCP reply");
 });
+
+test("the tool schema offers every agent the tool can actually answer for", async () => {
+  const [, list] = await rpc([INIT, { jsonrpc: "2.0", id: 7, method: "tools/list" }], { expect: 2 });
+  const listModels = list.result.tools.find((t) => t.name === "list_models");
+
+  const { SPAWNABLE } = await import("../src/models.mjs");
+
+  // These two lists drifted once. Gemini was spawnable everywhere except in
+  // this enum, so list_models({}) returned a Gemini catalogue while
+  // list_models({agent: "gemini"}) was refused by the schema before the handler
+  // ever ran. The duplication is deliberate - importing models.mjs to list
+  // tools would pull binary scanning into startup - so this asserts it instead.
+  assert.deepEqual(
+    [...listModels.inputSchema.properties.agent.enum].sort(),
+    [...SPAWNABLE].sort(),
+    "the MCP enum and models.SPAWNABLE must name the same agents"
+  );
+});

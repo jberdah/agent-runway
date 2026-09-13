@@ -18,7 +18,12 @@ const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 
 const PROVIDERS = ["claude", "codex", "copilot", "antigravity"];
-const SPAWNABLE_AGENTS = ["claude", "codex", "copilot"];
+// Must match models.mjs SPAWNABLE. Duplicated rather than imported so that
+// listing tools stays cheap - models.mjs pulls in binary scanning - and a test
+// asserts the two lists agree, because this one silently drifted once: gemini
+// was spawnable everywhere except in this enum, so list_models({}) returned it
+// while list_models({agent: "gemini"}) was refused by the schema.
+const SPAWNABLE_AGENTS = ["codex", "copilot", "claude", "gemini"];
 
 // Permissive on purpose: these payloads describe undocumented upstreams that
 // can grow a field without warning, and a strict schema would turn that into a
