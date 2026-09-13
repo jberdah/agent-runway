@@ -17,7 +17,7 @@ import { envelope, VERSION } from "./core.mjs";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 
-const PROVIDERS = ["claude", "codex", "copilot", "antigravity"];
+const PROVIDERS = ["claude", "codex", "copilot"];
 // Must match models.mjs SPAWNABLE. Duplicated rather than imported so that
 // listing tools stays cheap - models.mjs pulls in binary scanning - and a test
 // asserts the two lists agree, because this one silently drifted once: gemini
@@ -37,7 +37,7 @@ const TOOLS = [
     description:
       "How much quota is left on each coding agent signed in on this machine: " +
       "percentage consumed of every rate-limit window, and when each resets. " +
-      "Covers Claude, Codex, GitHub Copilot and Antigravity, each read with the " +
+      "Covers Claude, Codex and GitHub Copilot, each read with the " +
       "credentials that agent already keeps. One provider failing never stops " +
       "the others. Use before a long task or a fan-out of subagents. Returns no " +
       "credentials.",

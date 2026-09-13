@@ -1,13 +1,12 @@
 // Run an external command without freezing everything else.
 //
-// Two adapters need one: Copilot shells out to `gh`, and Antigravity reads the
-// process table and the listening sockets to find a port and a CSRF token that
-// change on every launch of the IDE.
+// Copilot shells out to `gh` for it, and a since-removed provider read the
+// process table and the listening sockets the same way.
 //
 // Both used spawnSync, which was the obvious choice and the wrong one. It blocks
 // the thread until the child exits, so the "parallel" read in readAll was not
-// parallel: whichever adapter reached its spawnSync first stopped the other
-// three, and the event loop with them. Measured on a real machine, reading four
+// parallel: whichever adapter reached its spawnSync first stopped the others,
+// and the event loop with them. Measured on a real machine, reading four
 // providers took 16.7s and the loop was frozen for 16.4s of it — a 100ms
 // heartbeat running alongside fired twice where it should have fired 167 times.
 //

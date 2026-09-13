@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 /**
  * The shape of what this tool answers, versioned separately from the tool.
@@ -385,7 +385,7 @@ export async function fetchUsage({
           "the token produces exactly the same refusal.\n\n" +
           "The durable alternative is the claude.ai session cookie, which that endpoint\n" +
           "takes instead of a Bearer: paste it into ~/.claude/session-cookie. Codex,\n" +
-          "Copilot and Antigravity are unaffected, having durable credentials of their own."
+          "Copilot is unaffected, having a durable credential of its own."
         : NO_CREDENTIAL_HINT
     );
   }

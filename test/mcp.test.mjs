@@ -20,7 +20,7 @@ const SERVER = fileURLToPath(new URL("../src/mcp.mjs", import.meta.url));
 const CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runway-mcptest-"));
 after(() => fs.rmSync(CACHE_DIR, { recursive: true, force: true }));
 
-for (const provider of ["claude", "codex", "copilot", "antigravity"]) {
+for (const provider of ["claude", "codex", "copilot"]) {
   fs.writeFileSync(
     path.join(CACHE_DIR, `${provider}.json`),
     JSON.stringify({

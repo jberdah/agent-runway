@@ -1,19 +1,21 @@
 // Provider registry: read one, or read them all at once.
 //
-// Reading several providers must never fail as a whole. Antigravity only
-// answers while its IDE runs, a Codex token expires, `gh` may be absent — any
-// of those is a per-provider status, never an exception that loses the other
-// three. Every adapter is wrapped so a throw or a hang degrades that provider
-// alone.
+// Reading several providers must never fail as a whole. A Codex token expires,
+// `gh` may be absent, a network is a network — any of those is a per-provider
+// status, never an exception that loses the others. Every adapter is wrapped so
+// a throw or a hang degrades that provider alone.
+//
+// Every provider here is also spawnable, and a test holds that line. Reporting
+// quota for something a caller cannot invoke was worse than useless: capacity()
+// happily recommended Antigravity, an IDE, as the agent to send work to.
 
 import * as cache from "../cache.mjs";
-import * as antigravity from "./antigravity.mjs";
 import * as claude from "./claude.mjs";
 import * as codex from "./codex.mjs";
 import * as copilot from "./copilot.mjs";
 import { bindingWindow, secondsUntilReset, unavailable } from "./shared.mjs";
 
-export const ADAPTERS = { claude, codex, copilot, antigravity };
+export const ADAPTERS = { claude, codex, copilot };
 export const PROVIDER_IDS = Object.keys(ADAPTERS);
 
 const HARD_TIMEOUT_MS = 20000;
@@ -101,7 +103,7 @@ async function readOne(name, options) {
  */
 export async function readAll(options = {}) {
   const names = options.providers?.length ? options.providers : PROVIDER_IDS;
-  // In parallel: Antigravity spawns two processes and Copilot shells out to gh,
+  // In parallel: Copilot shells out to gh and the others make network calls,
   // so serial reads would add up to seconds.
   return Promise.all(names.map((name) => readOne(name, options)));
 }
@@ -130,9 +132,10 @@ function overallDecision(providers, rule) {
   // A provider that could not be read is neither under the threshold nor over
   // it: it is outside the set the rule speaks about. Counting it as blocking
   // contradicted the rule's own wording — "every READABLE provider" — and made
-  // a closed Antigravity IDE answer "unknown" for a machine where Claude and
-  // Codex both had room. The unreadable ones are named in `overall.unreadable`
-  // instead, so a decision is never quietly based on partial data.
+  // one provider that could not be reached answer "unknown" for a machine where
+  // the others had plenty of room. The unreadable ones are named in
+  // `overall.unreadable` instead, so a decision is never quietly based on
+  // partial data.
   const readable = providers.filter((p) => p.decision !== "unknown");
   if (!readable.length) return "unknown";
 

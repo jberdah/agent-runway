@@ -34,7 +34,7 @@ const PAYLOAD = {
 
 // Seed the other providers so the diagnostic never touches gh, a live IDE or
 // the network for them.
-for (const provider of ["codex", "copilot", "antigravity"]) {
+for (const provider of ["codex", "copilot"]) {
   fs.writeFileSync(
     path.join(CACHE_DIR, `${provider}.json`),
     JSON.stringify({

@@ -26,7 +26,7 @@ test("every provider's way of saying how full it is converges on percent used", 
   assert.equal(fromUsedPercent(78), 78, "Claude and Codex report consumption");
   assert.equal(fromRemainingPercent(100), 0, "Copilot reports what is left");
   assert.equal(fromRemainingPercent(10), 90);
-  assert.equal(fromRemainingFraction(1), 0, "Antigravity reports a 0-1 fraction left");
+  assert.equal(fromRemainingFraction(1), 0, "a 0-1 fraction remaining, as Antigravity reported");
   assert.equal(fromRemainingFraction(0.25), 75);
   assert.equal(fromCounts(200, 2000), 90, "raw counts, when that is all there is");
 });
@@ -298,7 +298,7 @@ test("a provider that could not be read does not block the ones that could", () 
       reading("claude", [makeWindow({ kind: "session", percentUsed: 10 })]),
       reading("codex", [makeWindow({ kind: "session", percentUsed: 4 })]),
       // The everyday case on this machine: the IDE is simply not open.
-      { provider: "antigravity", label: "Antigravity", status: "unreachable", windows: [], detail: "IDE closed" },
+      { provider: "copilot", label: "GitHub Copilot", status: "unreachable", windows: [], detail: "gh failed" },
     ],
     { threshold: 90 }
   );
@@ -308,7 +308,7 @@ test("a provider that could not be read does not block the ones that could", () 
   assert.equal(decision.overall.decision, "proceed");
   // But it is never silently dropped: a caller can see the answer rests on
   // three providers rather than four.
-  assert.deepEqual(decision.overall.unreadable, ["antigravity"]);
+  assert.deepEqual(decision.overall.unreadable, ["copilot"]);
   assert.equal(decision.anyUnknown, true);
 });
 
@@ -316,7 +316,7 @@ test("a known blocker outranks a provider that could not be read", () => {
   const decision = capacity(
     [
       reading("claude", [makeWindow({ kind: "session", percentUsed: 96 })]),
-      { provider: "antigravity", label: "Antigravity", status: "unreachable", windows: [], detail: "IDE closed" },
+      { provider: "copilot", label: "GitHub Copilot", status: "unreachable", windows: [], detail: "gh failed" },
     ],
     { threshold: 90 }
   );
@@ -509,8 +509,8 @@ test("the hard timeout cancels the adapter rather than abandoning it", async () 
 test("an answer that arrives in time still releases whatever is left running", async () => {
   let cancelled = false;
 
-  // Answers immediately, then keeps something pending - Antigravity does this
-  // for real, still trying a second port after the first one replied.
+  // Answers immediately, then keeps something pending: an adapter can still be
+  // trying a fallback endpoint after the first one replied.
   ADAPTERS.leaky = {
     label: "Leaky",
     read: async ({ signal }) => {
@@ -527,5 +527,24 @@ test("an answer that arrives in time still releases whatever is left running", a
     assert.equal(cancelled, true, "success aborts too, so nothing is left holding a socket");
   } finally {
     delete ADAPTERS.leaky;
+  }
+});
+
+test("every provider whose quota is read is one a caller can actually invoke", async () => {
+  const { PROVIDER_IDS } = await import("../src/providers/index.mjs");
+  const { SPAWNABLE } = await import("../src/models.mjs");
+
+  // Antigravity was the counter-example, and it was worse than dead weight.
+  // It is an IDE: not spawnable, and readable only while it is open - so the
+  // number was available exactly when the IDE was already showing it, and
+  // absent whenever a scheduled read would have needed it. Meanwhile capacity()
+  // was free to name it as `recommended`, which is to say, to send work to
+  // something that cannot take any.
+  //
+  // Reading quota for an agent nobody can delegate to is not extra coverage.
+  // If a future provider genuinely warrants an exception, this test is where
+  // that argument has to be made.
+  for (const provider of PROVIDER_IDS) {
+    assert.ok(SPAWNABLE.includes(provider), `${provider} has quota but cannot be spawned`);
   }
 });

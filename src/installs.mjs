@@ -63,17 +63,11 @@ export const AGENTS = {
     vscode: null, // Copilot Chat ships inside VS Code rather than as an extension
     desktop: null,
   },
-  // Spawnable with a model, unlike Antigravity, which is why it earns an entry
+  // Spawnable with a model argument, which is what earns an entry
   // even though its quota is not read separately: it shares Google's.
   gemini: {
     label: "Gemini CLI",
     binary: "gemini",
-    vscode: null,
-    desktop: null,
-  },
-  antigravity: {
-    label: "Antigravity",
-    binary: "antigravity",
     vscode: null,
     desktop: null,
   },
@@ -96,7 +90,6 @@ const KNOWN_LOCATIONS = {
     codex: ["AppData/Local/Programs/OpenAI/Codex/bin/codex.exe"],
     copilot: ["AppData/Roaming/npm/copilot.cmd"],
     gemini: ["AppData/Roaming/npm/gemini.cmd"],
-    antigravity: ["AppData/Local/Programs/Antigravity/bin/antigravity.exe"],
   },
   // Unverified: this project has only ever run on Windows. The paths follow the
   // usual global-npm and application conventions, and a miss simply yields no

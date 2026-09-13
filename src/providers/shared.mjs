@@ -1,9 +1,10 @@
 // The normalized contract every provider adapter must produce.
 //
-// Four providers were probed to design this, and each reports "how full is it"
+// Four providers were probed to design this, and each reported "how full is it"
 // differently: Claude and Codex give a percentage consumed, Copilot gives a
-// percentage remaining plus raw counts, Antigravity gives a 0-1 fraction
-// remaining plus credits. Adapters convert into one direction — percentUsed —
+// percentage remaining plus raw counts, and one gave a 0-1 fraction remaining
+// plus credits. That fourth one is gone; the conversions stay, because the next
+// provider will have a dialect of its own. Adapters convert into one direction — percentUsed —
 // and keep the raw numbers when a provider supplies them, because "200 of 2000
 // chat requests" says more than "90%".
 

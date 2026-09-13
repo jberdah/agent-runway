@@ -5,7 +5,7 @@
 // actually misleads a caller untested: a gate that answers "somebody has room"
 // to an agent asking "have I got room". The cache is the seam that makes this
 // testable offline — a pre-seeded reading is served without any adapter
-// running, so no network, no gh, no IDE, and no 20-second Antigravity wait.
+// running, so no network and no gh.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -69,7 +69,6 @@ const OFFLINE = {
 seed("claude", 96);
 seed("codex", 10);
 seed("copilot", 20, { kind: "monthly" });
-seed("antigravity", 15);
 
 test("a gate on everything defers when one provider is out, rather than reporting the best", () => {
   const { code, stdout } = run("--gate", "90");
@@ -121,7 +120,7 @@ test("a bare --gate still means the default, including before another flag", () 
 test("an unknown provider is refused by name, not silently ignored", () => {
   const { code, stderr } = run("--provider", "nope", "--gate", "90");
   assert.equal(code, 1);
-  assert.match(stderr, /claude, codex, copilot, antigravity/);
+  assert.match(stderr, /claude, codex, copilot/);
 });
 
 test("a provider that cannot be read is unknown, never room to work", () => {

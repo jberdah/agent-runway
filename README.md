@@ -14,9 +14,9 @@ any client can call, so the reasoning happens once instead of in every model.
 > **Unofficial.** This reads undocumented Anthropic endpoints. It can stop
 > working without notice and is not a compatibility contract with anyone.
 
-Covers **Claude, Codex, GitHub Copilot, Gemini CLI and Antigravity**, each read
-with the credentials that agent already keeps. One provider failing never costs
-the others their answer.
+Covers **Claude, Codex, GitHub Copilot and Gemini CLI**, each read with the
+credentials that agent already keeps. One provider failing never costs the
+others their answer.
 
 *Part of the [brainclaw](https://brainclaw.dev) toolkit.*
 
@@ -180,8 +180,8 @@ a reset to see whether the quota came back — and that is what the cookie is fo
 Either credential is enough on its own. Neither is required when the other is
 present, and the answer reports which one actually worked.
 
-**Codex, Copilot and Antigravity are unaffected.** Each has a durable credential
-of its own, which is part of why this tool covers more than one provider.
+**Codex and Copilot are unaffected.** Each has a durable credential of its own,
+which is part of why this tool covers more than one provider.
 
 Refreshing Claude Code's token ourselves is possible in principle and is
 deliberately not done: the refresh token rotates on use, so a background tool
@@ -293,9 +293,16 @@ them from two different tools defeats the point:
 
 ### What is covered, and what is not
 
-Not every agent answers both questions. Antigravity reports a quota and cannot
-be spawned; Gemini can be spawned and publishes no usage endpoint. Reading a
-missing cell as zero would be worse than reading nothing.
+Not every agent answers both questions: Gemini can be spawned and publishes no
+usage endpoint. Reading a missing cell as zero would be worse than reading
+nothing.
+
+**Every agent whose quota is read is one you can invoke**, and a test holds that
+line. Antigravity was the counter-example, removed in 0.5.0. An IDE cannot be
+delegated to, and it only answered while it was open — so the number was there
+exactly when the IDE was already showing it, and missing whenever an unattended
+read would have needed it. Meanwhile the decision was free to name it as the
+agent to send work to.
 
 | Agent | Runway | Model list | `resolve` |
 | --- | --- | --- | --- |
@@ -303,7 +310,6 @@ missing cell as zero would be worse than reading nothing.
 | Codex | yes | declared, from `codex app-server` | yes |
 | GitHub Copilot | yes — through `gh` | declared, from shell completion | yes |
 | Gemini | **no endpoint** | inferred, by scanning the binary | yes |
-| Antigravity | yes — only while its IDE runs | **not covered** | **not spawnable** |
 
 *Declared* means the binary was asked and answered. *Inferred* means slugs were
 recovered from the binary itself: indicative, not authoritative — a spawn can
@@ -320,7 +326,6 @@ agent-runway --all
 Claude              Session (5h)   4 %   |  Weekly - all models  87 %
 OpenAI Codex plus   Session        0 %   |  Weekly                0 %
 GitHub Copilot      Chat  200/200 requests | Premium: not included in this plan
-Antigravity Pro     Flow credits 100 %
 ```
 
 **Which models each install will actually accept.**
@@ -414,13 +419,13 @@ more than it claims:
   "rule": "all",
   "ruleText": "every readable provider is under the threshold",
   "scoped": null,
-  "unreadable": ["antigravity"]
+  "unreadable": ["copilot"]
 }
 ```
 
 `unreadable` is the rest of that sentence. A provider that could not be read is
-neither under the threshold nor over it — a closed Antigravity IDE is not a
-verdict on the machine — so it is left out of the rule and **named** instead.
+neither under the threshold nor over it — a missing `gh` is not a verdict on the
+machine — so it is left out of the rule and **named** instead.
 A `proceed` resting on three providers out of four says so.
 
 `--gate` refuses an input it cannot use: `--gate foo`, `--gate 150` and
@@ -531,11 +536,10 @@ object rather than two.
 
 ## Reads are concurrent, and can be given up on
 
-Two providers need an external process — Copilot shells out to `gh`, Antigravity
-reads the process table and listening sockets to find a port and CSRF token that
-change on every launch of the IDE. Both used `spawnSync`, which blocks the
-thread until the child exits. So the "parallel" read was not parallel, and the
-20-second guard could never fire: a timer cannot run while the thread is frozen.
+Copilot shells out to `gh`, and a since-removed provider read the process table,
+both through `spawnSync` — which blocks the thread until the child exits. So the
+"parallel" read was not parallel, and the 20-second guard could never fire: a
+timer cannot run while the thread is frozen.
 
 Measured on one machine, before and after:
 
@@ -543,9 +547,6 @@ Measured on one machine, before and after:
 | --- | --- | --- |
 | before | 16.7 s | **16.4 s** |
 | after | 8.5 s | 0.4 s |
-
-Antigravity is still the slow one at ~8 s — PowerShell is not quick — but it now
-waits alongside the others instead of stopping them.
 
 With nothing blocking, the timeout can do what it claimed: an `AbortController`
 tears down the fetch and kills the spawned process, rather than returning while

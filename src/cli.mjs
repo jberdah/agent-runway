@@ -26,7 +26,7 @@ Commands:
 
 Options:
   --all           Every provider found on this machine, not just Claude
-  --provider <id> Read one provider only: claude, codex, copilot, antigravity.
+  --provider <id> Read one provider only: claude, codex or copilot.
                   Use this when asking about yourself rather than the machine.
   --models        What each installed agent will accept as a model, and
                   where two installs of the same agent disagree
@@ -44,8 +44,10 @@ Options:
   -h, --help      Show this help
   -v, --version
 
-Providers: claude, codex, copilot, antigravity. Each is read with the
-credentials that provider already keeps, and one failing never stops the rest.
+Providers: claude, codex, copilot. Each is read with the credentials that
+provider already keeps, and one failing never stops the rest. Every one of them
+is also an agent you can invoke - quota is not reported for anything you
+cannot delegate to.
 
 Authentication. Two credentials can read Claude usage, and \`claude setup-token\`
 mints neither - its token lacks the user:profile scope the endpoint requires.
@@ -210,7 +212,7 @@ async function main(argv) {
   }
 
   // Multi-provider paths go through the registry, which isolates failures:
-  // Antigravity needs its IDE open, a Codex token expires, gh may be absent.
+  // A Codex token expires, gh may be absent, a network is a network.
   const gate = gateThreshold(argv);
   if (gate?.invalid !== undefined) {
     process.stderr.write(

@@ -1,6 +1,6 @@
 ---
 name: agent-runway
-description: Answers two questions about the coding agents installed on this machine - how much rate-limit quota each has left, and which model slugs each installed binary will actually accept. Use when the user asks how much usage or quota is left, whether they are near a limit, when a window resets, or which models are available; and before delegating work to another agent, to pick a binary and a model argument that will not be rejected. Covers Claude, Codex, GitHub Copilot, Gemini CLI and Antigravity.
+description: Answers two questions about the coding agents installed on this machine - how much rate-limit quota each has left, and which model slugs each installed binary will actually accept. Use when the user asks how much usage or quota is left, whether they are near a limit, when a window resets, or which models are available; and before delegating work to another agent, to pick a binary and a model argument that will not be rejected. Covers Claude, Codex, GitHub Copilot and Gemini CLI.
 ---
 
 # Agent runway
@@ -60,11 +60,10 @@ The answer carries `overall.ruleText`. Quote it rather than paraphrasing
 | --- | --- | --- | --- |
 | Claude, Codex, GitHub Copilot | yes | yes | yes |
 | Gemini | **no endpoint exists** | yes | yes |
-| Antigravity | only while its IDE runs | **no** | **no** |
 
-Never report a missing cell as zero, and never suggest delegating to
-Antigravity. If asked about Gemini's quota, say there is no endpoint to read
-rather than implying it is at zero or unknown-but-checkable.
+Never report a missing cell as zero. If asked about Gemini's quota, say there is
+no endpoint to read rather than implying it is at zero or
+unknown-but-checkable. Every agent listed here can be invoked.
 
 ## Reading a quota answer
 
@@ -94,7 +93,7 @@ rather than implying it is at zero or unknown-but-checkable.
 - A provider may come back `unreachable` or `no_credentials`. That is
   information: say the provider could not be read rather than omitting it,
   because silently showing three of four invites a delegation to the missing
-  one. Antigravity in particular only answers while its IDE is running.
+  one.
 
 ## Reading a model answer
 
