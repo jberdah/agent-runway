@@ -202,7 +202,14 @@ async function main(argv) {
     process.stdout.write(emit("resolve", answer));
     // An unresolvable agent, or a slug its binary refuses, is a failed
     // precondition rather than a crash: exit 1 so a script can branch.
-    return answer.resolved && answer.model?.valid !== false ? 0 : 1;
+    //
+    // But only when the catalogue was DECLARED. An inferred one comes from
+    // reading identifiers out of a binary, and a slug missing from that scan is
+    // not proof of refusal - the CLI may well forward it. Blocking a spawn on
+    // that contradicts what the authority field says about itself, so an
+    // inferred mismatch is reported in the payload and left to the caller.
+    const refused = answer.model?.valid === false && answer.authority === "declared";
+    return answer.resolved && !refused ? 0 : 1;
   }
 
   // What each install will accept as a model. A separate question from quota,

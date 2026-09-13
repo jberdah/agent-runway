@@ -27,7 +27,15 @@ import { spawn } from "node:child_process";
  * Never rejects: a failed command is a result to read, not an exception to
  * catch, and every caller here has to carry on with the other providers.
  */
-export function run(command, args = [], { timeoutMs = 8000, signal, shell = false } = {}) {
+// A child that ignores SIGTERM would otherwise outlive every deadline above it.
+const KILL_GRACE_MS = 400;
+
+// Output is read to decide something small - a version, a JSON payload, a list
+// of model slugs. A child that decides to print a gigabyte should be cut off
+// rather than held in memory.
+const MAX_OUTPUT_BYTES = 8 << 20;
+
+export function run(command, args = [], { timeoutMs = 8000, signal, shell = false, maxBytes = MAX_OUTPUT_BYTES } = {}) {
   return new Promise((resolve) => {
     let child;
     try {
@@ -42,23 +50,35 @@ export function run(command, args = [], { timeoutMs = 8000, signal, shell = fals
     let settled = false;
     let timedOut = false;
     let aborted = false;
+    let truncated = false;
+    let killTimer = null;
 
     const stop = () => {
-      // SIGTERM only. Nothing read here is worth escalating to SIGKILL over,
-      // and the output is discarded either way.
       try {
         child.kill();
       } catch {
-        /* already gone */
+        return; // already gone
       }
+      // SIGTERM asks; it does not compel. A child that ignores it would sit
+      // there past every deadline above this one, so escalate after a grace
+      // period rather than trusting it to leave.
+      killTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* gone in the meantime */
+        }
+      }, KILL_GRACE_MS);
+      killTimer.unref?.();
     };
 
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       signal?.removeEventListener("abort", onAbort);
-      resolve(result);
+      resolve({ ...result, truncated });
     };
 
     const timer = setTimeout(() => {
@@ -79,10 +99,19 @@ export function run(command, args = [], { timeoutMs = 8000, signal, shell = fals
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (chunk) => {
+      if (stdout.length >= maxBytes) {
+        // Keep what was read and stop the child, rather than growing a string
+        // until the process dies of it.
+        if (!truncated) {
+          truncated = true;
+          stop();
+        }
+        return;
+      }
       stdout += chunk;
     });
     child.stderr?.on("data", (chunk) => {
-      stderr += chunk;
+      if (stderr.length < maxBytes) stderr += chunk;
     });
 
     child.on("error", (error) =>

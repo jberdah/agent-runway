@@ -77,3 +77,54 @@ test("a reading older than a day is treated as a miss, not as stale", () => {
     clear(k);
   }
 });
+
+test("cached readings are not left readable by other users", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runway-perms-"));
+  const previous = process.env.AGENT_RUNWAY_CACHE_DIR;
+  process.env.AGENT_RUNWAY_CACHE_DIR = dir;
+
+  try {
+    write("permtest", { provider: "claude", plan: "max", windows: [] });
+    const file = path.join(dir, "permtest.json");
+    assert.ok(fs.existsSync(file));
+
+    // The default location is a world-readable tmpdir: 1777, and a 022 umask
+    // leaves new files at 644. None of this is a credential, but it is the
+    // account's plan and how much of each window is consumed - not something
+    // another user on a shared machine should get for free.
+    if (process.platform !== "win32") {
+      assert.equal(fs.statSync(file).mode & 0o777, 0o600, "cache entry is readable by others");
+      assert.equal(fs.statSync(dir).mode & 0o777, 0o700, "cache directory is traversable by others");
+    }
+  } finally {
+    if (previous === undefined) delete process.env.AGENT_RUNWAY_CACHE_DIR;
+    else process.env.AGENT_RUNWAY_CACHE_DIR = previous;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("clearing the cache never removes the directory it was pointed at", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runway-clear-"));
+  const previous = process.env.AGENT_RUNWAY_CACHE_DIR;
+  process.env.AGENT_RUNWAY_CACHE_DIR = dir;
+
+  // Something that is not ours, in the directory a caller pointed us at.
+  const bystander = path.join(dir, "important.txt");
+  fs.writeFileSync(bystander, "not a cache entry");
+
+  try {
+    write("a", { x: 1 });
+    clear();
+
+    // `rmSync(dir, { recursive: true })` was the old implementation. With
+    // AGENT_RUNWAY_CACHE_DIR set to a home directory by mistake, that is not a
+    // cache clear, it is a deletion.
+    assert.ok(fs.existsSync(dir), "the directory itself must survive");
+    assert.ok(fs.existsSync(bystander), "files we did not write must survive");
+    assert.ok(!fs.existsSync(path.join(dir, "a.json")), "our own entry is gone");
+  } finally {
+    if (previous === undefined) delete process.env.AGENT_RUNWAY_CACHE_DIR;
+    else process.env.AGENT_RUNWAY_CACHE_DIR = previous;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

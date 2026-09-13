@@ -175,8 +175,26 @@ export function invocationFor({ path: file, launcher = null }, platform = proces
       return { command: process.execPath, args: [target], via: "node" };
     }
     if (platform === "win32" && (ext === ".cmd" || ext === ".bat")) {
-      // /d skips AutoRun, /s keeps the quoting rules predictable, /c runs and
-      // exits. Arguments stay an array: nothing is concatenated or escaped.
+      // cmd.exe re-parses what follows /c, and a path is not a safe thing to
+      // put there. Measured, with a file legally named `tool& mkdir X &rem
+      // .cmd`:
+      //
+      //   cmd /d /s /c <path> <args>          the mkdir RAN
+      //   cmd /d /c <path>                    the mkdir RAN
+      //   cmd /d /s /c "call" "<path>"        the mkdir RAN
+      //   cmd /d /s /c ""<path>" <args>"      safe - but only verbatim, which
+      //                                       means one string, which breaks
+      //                                       the args array a caller appends to
+      //
+      // There is no form that is both safe and shaped like {command, args}. So
+      // a path carrying characters cmd would act on is refused rather than
+      // described: this descriptor's whole promise is that spawning it works,
+      // and handing back something that might run a second command is worse
+      // than admitting we cannot express it.
+      if (/[&|<>^"%()]/.test(target)) {
+        return { command: null, args: [], via: "unsafe", reason: "path contains characters cmd.exe would interpret" };
+      }
+      // /d skips AutoRun, /s fixes the quoting rules, /c runs and exits.
       const comspec = process.env.ComSpec?.trim() || "cmd.exe";
       return { command: comspec, args: ["/d", "/s", "/c", target], via: "cmd" };
     }
@@ -265,9 +283,17 @@ export function versionOf(file, { launcher = null, fp = fingerprint(file) } = {}
 /** Only spawn when a version is actually wanted: these binaries are hundreds of MB. */
 export function probeVersion(file) {
   try {
-    const r = IS_WINDOWS
-      ? spawnSync(`"${file}" --version`, { ...SPAWN, shell: true })
-      : spawnSync(file, ["--version"], SPAWN);
+    // Through the same descriptor the rest of the tool uses, with no shell.
+    //
+    // This was `spawnSync(\`"${file}" --version\`, { shell: true })`. Tested:
+    // the quoting does hold, because `"` is not a legal character in a Windows
+    // filename, so nothing can break out of it — a file named
+    // `tool& mkdir X &rem .cmd` runs as one token and the `&` stays literal.
+    // Fixed anyway: it was the one place still interpolating a path into a
+    // command line, and being safe by accident is not a property to rely on.
+    const invoke = invocationFor({ path: file });
+    if (!invoke.command) return null; // refused as unsafe to express
+    const r = spawnSync(invoke.command, [...invoke.args, "--version"], SPAWN);
     if (r.status !== 0) return null;
     return (r.stdout ?? "").trim().match(/(\d+\.\d+\.\d+)/)?.[1] ?? null;
   } catch {

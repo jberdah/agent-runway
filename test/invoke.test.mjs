@@ -164,3 +164,51 @@ test("the help names the command the project is built around", async () => {
   assert.match(help, /--stdin/, "--help does not mention setup --stdin");
   assert.match(help, /doctor/);
 });
+
+test("a path with shell metacharacters is not a command line", async () => {
+  const { probeVersion } = await import("../src/installs.mjs");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+
+  // Windows forbids < > : " / \ | ? * in filenames, so a payload cannot
+  // redirect, and cannot close the quote the old implementation wrapped the
+  // path in. `&` is legal, and was the interesting case: tested against the
+  // pre-fix code it did NOT execute, because the quoting held. Fixed anyway -
+  // it was the last place interpolating a path into a command line, and being
+  // safe by accident is not a property to depend on.
+  const dir = fs.default.mkdtempSync(path.join(os.default.tmpdir(), "agent-runway-meta-"));
+  try {
+    const name = process.platform === "win32" ? "tool& mkdir INJECTED &rem .cmd" : "tool; mkdir INJECTED; :";
+    const file = path.join(dir, name);
+    fs.default.writeFileSync(file, process.platform === "win32" ? "@echo 1.2.3\r\n" : "#!/bin/sh\necho 1.2.3\n", { mode: 0o755 });
+
+    const previous = process.cwd();
+    process.chdir(dir);
+    try {
+      probeVersion(file);
+    } finally {
+      process.chdir(previous);
+    }
+
+    assert.ok(!fs.default.existsSync(path.join(dir, "INJECTED")), "the chained command ran");
+  } finally {
+    fs.default.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a path cmd.exe would act on is refused, not described", () => {
+  // There is no cmd.exe form that is both injection-safe and shaped like
+  // {command, args}: the only safe one needs windowsVerbatimArguments and a
+  // single command string, which a caller cannot append its own arguments to.
+  // So the descriptor declines rather than handing back something that might
+  // run a second command.
+  const refused = invocationFor({ path: "C:/npm/tool& mkdir X &rem .cmd" }, "win32");
+  assert.equal(refused.via, "unsafe");
+  assert.equal(refused.command, null, "a refused descriptor must not be spawnable");
+  assert.match(refused.reason, /cmd\.exe/);
+
+  // And an ordinary path is still described normally.
+  const fine = invocationFor({ path: "C:/npm/gemini.cmd" }, "win32");
+  assert.equal(fine.via, "cmd");
+  assert.ok(fine.command);
+});

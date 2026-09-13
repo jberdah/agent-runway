@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "0.6.1";
+export const VERSION = "0.6.2";
 
 /**
  * The shape of what this tool answers, versioned separately from the tool.

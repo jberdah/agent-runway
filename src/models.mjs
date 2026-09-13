@@ -16,15 +16,25 @@
 // A caller that gets "inferred" should be ready for a spawn to fail anyway.
 
 import fs from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 import * as cache from "./cache.mjs";
 import { fingerprint, invocationFor } from "./installs.mjs";
+import { run } from "./providers/run.mjs";
 
 const IS_WINDOWS = process.platform === "win32";
 
 /** The install's own descriptor, or one derived on the spot for a bare path. */
 const invocationOf = (install) => install.invoke ?? invocationFor(install);
+
+/**
+ * A descriptor with no command is one invocationFor refused to express — a path
+ * carrying characters cmd.exe would act on. Readers return it as an error
+ * rather than spawning `null`, which would be an obscure crash for a case the
+ * descriptor already explained.
+ */
+const unusable = (invoke) =>
+  invoke?.command ? null : { error: invoke?.reason ?? "this install cannot be invoked safely" };
 
 // ------------------------------------------------------------------- codex
 
@@ -33,6 +43,9 @@ const invocationOf = (install) => install.invoke ?? invocationFor(install);
  * and answers `model/list` over stdio. The most honest source of the three.
  */
 function codexModels(invoke, timeoutMs = 45000) {
+  const refused = unusable(invoke);
+  if (refused) return Promise.resolve(refused);
+
   return new Promise((resolve) => {
     let child;
     try {
@@ -106,17 +119,23 @@ function codexModels(invoke, timeoutMs = 45000) {
  * The Copilot CLI has no list command, but its shell completion enumerates the
  * values `--model` accepts, which is the same thing said differently.
  */
-function copilotModels(invoke, timeoutMs = 30000) {
-  // Through the invocation descriptor, with no shell. This used to be
-  // `shell: true` on a quoted path - which worked, and meant the tool knew how
-  // to start a program it was telling callers to start differently.
-  const result = spawnSync(invoke.command, [...invoke.args, "completion", "bash"], {
-    encoding: "utf-8",
-    windowsHide: true,
-    timeout: timeoutMs,
-  });
+async function copilotModels(invoke, timeoutMs = 30000, signal) {
+  const refused = unusable(invoke);
+  if (refused) return refused;
+
+  // Through the invocation descriptor, with no shell, and no longer through
+  // spawnSync.
+  //
+  // 0.4.0 removed spawnSync from the quota adapters because it froze the event
+  // loop - measured at 16.4s on a 16.7s read. This call was left behind one
+  // directory away, so `--models` and the MCP list_models tool still stopped
+  // everything for the duration: measured at 4.9s with zero timer ticks out of
+  // an expected 49. Same fix, same reason.
+  const result = await run(invoke.command, [...invoke.args, "completion", "bash"], { timeoutMs, signal });
 
   if (result.error) return { error: String(result.error.message) };
+  if (result.aborted) return { error: "cancelled" };
+  if (result.timedOut) return { error: `completion did not answer within ${timeoutMs / 1000}s` };
   if (result.status !== 0) return { error: `completion exited ${result.status}` };
 
   const slugs = new Set(

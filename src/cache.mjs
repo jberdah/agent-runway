@@ -61,8 +61,16 @@ export function read(key, maxAgeMs = DEFAULT_TTL_MS, maxStaleMs = STALE_MAX_MS) 
 
 export function write(key, value) {
   try {
-    fs.mkdirSync(dir(), { recursive: true });
-    fs.writeFileSync(fileFor(key), JSON.stringify({ at: Date.now(), value }), "utf8");
+    // 0700/0600. The default lands in a world-readable tmpdir (1777 with a 022
+    // umask gives 644), and while none of this is a credential, it is the
+    // account's plan, how much of each window is consumed and when it resets —
+    // enough that another user on a shared machine should not get it for free.
+    fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
+    const file = fileFor(key);
+    fs.writeFileSync(file, JSON.stringify({ at: Date.now(), value }), { encoding: "utf8", mode: 0o600 });
+    // mode on writeFileSync only applies when the file is created, so an entry
+    // written before this change keeps its old permissions without this.
+    fs.chmodSync(file, 0o600);
   } catch {
     // A cache that cannot be written must never break the read it was helping.
   }
@@ -70,7 +78,16 @@ export function write(key, value) {
 
 export function clear(key) {
   try {
-    fs.rmSync(key ? fileFor(key) : dir(), { recursive: true, force: true });
+    if (key) {
+      fs.rmSync(fileFor(key), { force: true });
+      return;
+    }
+    // Never `rm -rf` the directory itself. It is caller-supplied through
+    // AGENT_RUNWAY_CACHE_DIR, and a stray "/" or "$HOME" would take the lot.
+    // Only files this module could have written are removed.
+    for (const name of fs.readdirSync(dir())) {
+      if (name.endsWith(".json")) fs.rmSync(path.join(dir(), name), { force: true });
+    }
   } catch {
     /* nothing to clear */
   }
